@@ -5,6 +5,9 @@
 ## 📰 News
 
 - [Sep 18, 2025] UMU-Bench has been accepted by NeurIPS 2025 Datasets and Benchmarks Track!
+- **[May 10, 2026]** 🚨 **Erratum:** We detect a minor typo in Equation 2: the forget set is denoted as W and the retain set as H. The code implementation is unaffected and has always been correct. Special thanks to [Issue #2](https://github.com/QDRhhhh/UMU-bench/issues/2) for pointing this out!
+
+![image-formula](./README.assets/image-formula.png)
 
 ## 🌟 Overview
 
