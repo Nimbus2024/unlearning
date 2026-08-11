@@ -19,6 +19,11 @@ repo_id + local_files_only 加载时命中缓存，无需传模型路径超参�
 import argparse
 import os
 
+# 关键: 禁用 xet 加速传输(部分地区访问 cas-server.xethub.hf.co 401),
+# 强制走普通 HTTP 下载。必须在 import huggingface_hub 前设置。
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+
 from transformers import (
     LlavaForConditionalGeneration,
     AutoProcessor,
@@ -69,8 +74,8 @@ def main():
     do_models = args.models or not args.data
     do_data = args.data or not args.models
 
-    print(f"HF_HOME={os.environ.get('HF_HOME', '(default)')}")
-    print(f"HF_ENDPOINT={os.environ.get('HF_ENDPOINT', '(default hf.co)')}")
+    print("HF_HOME=" + os.environ.get("HF_HOME", "(default)"))
+    print("HF_ENDPOINT=" + os.environ.get("HF_ENDPOINT", "(default hf.co)"))
 
     if do_models:
         download_models()
