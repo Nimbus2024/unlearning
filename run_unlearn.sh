@@ -78,3 +78,10 @@ python eval.py --model_id "${MODEL_ID}" \
   2>&1 | tee "${RUN_DIR}/eval.log"
 
 echo "=== [$(date +%H:%M:%S)] Done. Results in ${RUN_DIR} ==="
+
+# 可选: 完成后自动关机 (SHUTDOWN_AFTER=1 时)。日志已落盘, 关机后仍可读。
+if [ "${SHUTDOWN_AFTER:-0}" = "1" ]; then
+  echo "=== [$(date +%H:%M:%S)] SHUTDOWN_AFTER=1, 3秒后关机 ==="
+  sleep 3
+  /usr/bin/shutdown
+fi
