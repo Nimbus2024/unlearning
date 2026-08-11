@@ -22,6 +22,24 @@ import os
 # 关键: 禁用 xet 加速传输(部分地区访问 cas-server.xethub.hf.co 401),
 # 强制走普通 HTTP 下载。必须在 import huggingface_hub 前设置。
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+# 加载项目 .env 中的 HF 环境配置(若存在)
+_env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if not os.path.exists(_env_file):
+    # .env 不入库(gitignore), 首次运行自动生成默认配置
+    with open(_env_file, "w") as f:
+        f.write("export HF_ENDPOINT=https://hf-mirror.com\n"
+                "export HF_HOME=/root/autodl-tmp/hf\n"
+                "export HF_HUB_DISABLE_SYMLINKS=1\n"
+                "export HF_HUB_DISABLE_XET=1\n"
+                "export HF_DATASETS_CACHE=/root/autodl-tmp/hf/datasets\n"
+                "export TRANSFORMERS_CACHE=/root/autodl-tmp/hf/models\n")
+    print(f"已自动创建 .env: {_env_file}")
+if os.path.exists(_env_file):
+    for line in open(_env_file):
+        line = line.strip()
+        if line.startswith("export ") and "=" in line:
+            k, v = line[len("export "):].split("=", 1)
+            os.environ.setdefault(k, v.strip())
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
 from transformers import (
@@ -59,8 +77,19 @@ def download_models():
 
 
 def download_data():
-    print(f"=== Downloading dataset: {DATASET_REPO} ===")
-    load_dataset(DATASET_REPO)
+    # 代码用 pd.read_parquet(data_split_dir/...) 直接读文件路径，不走 HF 缓存。
+    # 所以数据集下载到约定路径 /root/autodl-tmp/data/UMU-bench，与
+    # run_unlearn.sh 的 DATA_SPLIT_DIR 默认值一致。用 hf download 绕过
+    # datasets 库的 split 校验 (huggingface-cli 已废弃)。
+    data_dir = os.environ.get("UMU_DATA_DIR", "/root/autodl-tmp/data/UMU-bench")
+    print(f"=== Downloading dataset to {data_dir} ===")
+    os.makedirs(data_dir, exist_ok=True)
+    ret = os.system(
+        f"hf download {DATASET_REPO} --repo-type dataset "
+        f"--local-dir {data_dir}"
+    )
+    if ret != 0:
+        raise RuntimeError(f"hf download failed (exit {ret})")
     print("dataset downloaded.")
 
 

@@ -13,6 +13,11 @@
 # <run_dir>/<METHOD>_results.json.
 set -euo pipefail
 
+# 加载 HF 环境配置(缓存/镜像/xet)
+if [ -f "$(dirname "$0")/.env" ]; then
+  source "$(dirname "$0")/.env"
+fi
+
 METHOD="$1"
 shift
 
@@ -22,7 +27,7 @@ mkdir -p "${RUN_DIR}"
 
 MODEL_ID=${MODEL_ID:-llava-hf/llava-1.5-7b-hf}
 # 遗忘基座默认是 SFT 模型 (llava_smu_ft)；all unlearn 方法遗忘的是 SFT 后的知识
-VANILLA_DIR=${VANILLA_DIR:-/root/autodl-tmp/models/llava_smu_ft}
+VANILLA_DIR=${VANILLA_DIR:-chengyewang/llava_smu_ft}
 DATA_SPLIT_DIR=${DATA_SPLIT_DIR:-/root/autodl-tmp/data/UMU-bench}
 FORGET_RATIO=${FORGET_RATIO:-5}
 
@@ -43,18 +48,18 @@ elif [ "${METHOD}" = "GD" ]; then
     2>&1 | tee "${RUN_DIR}/train.log"
 elif [ "${METHOD}" = "KL" ]; then
   python unlearn/KL.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
-    --oracle_model_id "${ORACLE_DIR:-/root/autodl-tmp/models/llava_smu_ft}" \
+    --oracle_model_id "${ORACLE_DIR:-chengyewang/llava_smu_ft}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
 elif [ "${METHOD}" = "NPO" ]; then
   python unlearn/NPO.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
-    --oracle_model_id "${ORACLE_DIR:-/root/autodl-tmp/models/llava_smu_ft}" \
+    --oracle_model_id "${ORACLE_DIR:-chengyewang/llava_smu_ft}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
 elif [ "${METHOD}" = "OURS" ]; then
   # Ours_v2: dynamic-gamma DPO unlearn; base/ref = llava_smu_ft (SFT), processor = llava-1.5-7b-hf
   python unlearn/Ours_v2.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
-    --processor_dir "${PROCESSOR_DIR:-/root/autodl-tmp/models/llava-1.5-7b-hf}" \
+    --processor_dir "${PROCESSOR_DIR:-llava-hf/llava-1.5-7b-hf}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
 else
