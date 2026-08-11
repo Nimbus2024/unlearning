@@ -12,3 +12,5 @@ models/
 # 环境
 *.env
 .env
+# 内部文档(不入库)
+CLAUDE.md
