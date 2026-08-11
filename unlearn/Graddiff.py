@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import random
+import time
 from collections import defaultdict, Counter
 import argparse
 
@@ -40,6 +41,9 @@ from peft import (
 
 # Accelerate
 from accelerate import Accelerator
+
+# TensorBoard
+from torch.utils.tensorboard import SummaryWriter
 
 # tqdm for progress bars
 from tqdm import tqdm
@@ -221,6 +225,26 @@ def main(args):
         model, optimizer, train_dataloader_multimodal_forget,train_dataloader_unimodal_forget,train_dataloader_multimodal_retain,train_dataloader_unimodal_retain, lr_scheduler
     )
 
+    # Unified run directory: results/GD/<timestamp>/ containing tensorboard,
+    # saved model (model/), train log, eval log, eval results and args.
+    run_dir = args.run_dir or os.path.join(
+        "results", "GD",
+        time.strftime("%Y%m%d-%H%M%S"))
+    os.makedirs(run_dir, exist_ok=True)
+    save_dir = args.save_dir or os.path.join(run_dir, "model")
+    tb_dir = os.path.join(run_dir, "tensorboard")
+    os.makedirs(tb_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=tb_dir)
+    print(f"Run dir: {run_dir}")
+    print(f"Model save dir: {save_dir}")
+    print(f"TensorBoard log dir: {tb_dir}")
+    args.save_dir = save_dir
+    # Save training hyperparameters for run comparison
+    with open(os.path.join(run_dir, "args.json"), "w") as f:
+        json.dump(vars(args), f, indent=2, default=str)
+    print(f"Hyperparameters saved to: {run_dir}/args.json")
+
+    global_step = 0
     for epoch in range(args.num_epochs):
         model.train()
         total_loss = 0
@@ -229,14 +253,14 @@ def main(args):
                                 total=len(train_dataloader_multimodal_forget))  # 或者用 len(train_dataloader_unimodal)
 
         for multi_batch_forget, uni_batch_forget,multi_batch_retain, uni_batch_retain in mix_progress_bar:
-            # ------------------- 多模态 forward + backward ------------------- 
+            # ------------------- 多模态 forward + backward -------------------
 
             outputs = invoke(multi_batch_forget,model,args.model_id,'multimodal')
             loss_multi_forget = -outputs.loss
 
             outputs = invoke(multi_batch_retain,model,args.model_id,'multimodal')
             loss_multi_retain = outputs.loss
-            
+
             loss_multi = loss_multi_forget + args.gamma*loss_multi_retain
             # print('loss_mul:',loss_multi)
             accelerator.backward(loss_multi)
@@ -260,27 +284,44 @@ def main(args):
             # step_loss = loss_uni.item()
             total_loss += step_loss
 
+            # TensorBoard
+            writer.add_scalar("loss/multi_forget", loss_multi_forget.item(), global_step)
+            writer.add_scalar("loss/multi_retain", loss_multi_retain.item(), global_step)
+            writer.add_scalar("loss/uni_forget", loss_uni_forget.item(), global_step)
+            writer.add_scalar("loss/uni_retain", loss_uni_retain.item(), global_step)
+            writer.add_scalar("loss/multi", loss_multi.item(), global_step)
+            writer.add_scalar("loss/uni", loss_uni.item(), global_step)
+            writer.add_scalar("loss/total", step_loss, global_step)
+            writer.add_scalar("lr", optimizer.param_groups[0]["lr"], global_step)
+            global_step += 1
+
             # 这里可以打印一下当前步的平均损失等
             mix_progress_bar.set_postfix({"step_loss": step_loss, "total_loss": total_loss})
 
         # 如果需要每个epoch结束时打印一下平均loss，可以加在循环外
         avg_loss = total_loss / (len(train_dataloader_multimodal_forget))
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
+        writer.add_scalar("loss/epoch_avg", avg_loss, epoch)
 
-        # Save the final model
+    writer.close()
+    # Save the LoRA adapter only (not the merged full model) to save disk space.
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
-    # if args.model_id.startswith("meta-llama") == False:
-    unwrapped_model = unwrapped_model.merge_and_unload()
     unwrapped_model.save_pretrained(args.save_dir)
-    print(f"Model saved to: {args.save_dir}")
+    # Record the base model path so eval can load base + this adapter.
+    with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
+        json.dump({"base_model": args.vanilla_dir, "method": "GD"}, f)
+    print(f"LoRA adapter saved to: {args.save_dir}")
 
 if __name__ == "__main__":
     # Argument parser for different options
     parser = argparse.ArgumentParser(description="Fine-tune different models")
     parser.add_argument("--model_id", type=str, default='llava-hf/llava-1.5-7b-hf', help="Pretrained model ID")
     parser.add_argument("--vanilla_dir", type=str, required=True, help="Model path")
-    parser.add_argument("--save_dir", type=str, required=True, help="Directory to save the model")
+    parser.add_argument("--save_dir", type=str, default=None,
+                        help="Directory to save the model; defaults to <run_dir>/model")
+    parser.add_argument("--run_dir", type=str, default=None,
+                        help="Unified run dir; defaults to results/GD/<timestamp> (contains tensorboard/, model/, train.log, eval results)")
     parser.add_argument("--data_split_dir", type=str, required=True, help="Directory of the test dataset")
     parser.add_argument("--gamma", type=float, default=1.0, help="gamma")
     parser.add_argument("--forget_split_ratio", type=int, default=5, help="forget ratio")
@@ -289,6 +330,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--num_epochs", type=int, default=5, help="Number of epochs for training")
     parser.add_argument("--max_length", type=int, default=384, help="Maximum sequence length")
+    parser.add_argument("--tb_dir", type=str, default=None,
+                        help="TensorBoard log dir; defaults to <run_dir>/tensorboard")
     args = parser.parse_args()
 
     # Call main function

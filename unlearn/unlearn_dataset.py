@@ -133,15 +133,43 @@ class Muitimodal_Dataset(Dataset):
             "answer": tokenized_answer
         }
 
+def mask_prompt_labels(batch, processor, answers):
+    """Mask loss on everything before the assistant's answer.
+
+    The prompt is `USER: ...\nASSISTANT: {answer}`, so the answer tokens sit at
+    the end of each (unpadded) sequence. Labels before the answer start are set
+    to -100 so only the model's response is trained on. Padding is already -100.
+    """
+    input_ids = batch["input_ids"]
+    pad_id = processor.tokenizer.pad_token_id
+    labels = input_ids.clone()
+    for i in range(labels.shape[0]):
+        row = input_ids[i]
+        nonpad = (row != pad_id).nonzero()
+        if len(nonpad) == 0:
+            labels[i] = -100
+            continue
+        end = nonpad[-1].item()
+        ans_ids = processor.tokenizer(answers[i], add_special_tokens=False)["input_ids"]
+        n = len(ans_ids)
+        start = end - n + 1
+        if not torch.equal(row[start:end + 1], torch.tensor(ans_ids, device=row.device)):
+            raise RuntimeError(f"answer tail alignment failed for sample {i}")
+        labels[i, :start] = -100
+    return labels
+
+
 def train_collate_fn_llava_multimodal(examples, processor, args):
     images = []
     texts = []
+    answers = []
 
     for example in examples:
         image = example.get('image')
         question = example.get('question')
         answer = example.get('answer')
         images.append(image)
+        answers.append(answer)
         prompt = f"USER: <image>\n{question}\nASSISTANT: {answer}"
         texts.append(prompt)
 
@@ -158,10 +186,8 @@ def train_collate_fn_llava_multimodal(examples, processor, args):
         # max_length=args.max_length,
         return_tensors="pt"
     )
-    # Mask labels
-    labels = batch["input_ids"].clone()
-    labels[labels == processor.tokenizer.pad_token_id] = -100
-    batch["labels"] = labels
+    # Mask labels: only keep the assistant's answer tokens (ASSISTANT: onwards)
+    batch["labels"] = mask_prompt_labels(batch, processor, answers)
 
 
     return batch["input_ids"], batch["attention_mask"], batch["pixel_values"], batch["labels"]
@@ -357,9 +383,11 @@ class Unimodal_Dataset(Dataset):
 
 def train_collate_fn_llava_unimodal(examples, processor, args):
     texts = []
+    answers = []
     for example in examples:
         question = example.get('question')
         answer = example.get('answer')
+        answers.append(answer)
         prompt = f"USER: {question}\nASSISTANT: {answer}"
         texts.append(prompt)
 
@@ -375,10 +403,8 @@ def train_collate_fn_llava_unimodal(examples, processor, args):
         # max_length=args.max_length,
         return_tensors="pt"
     )
-    # Mask labels
-    labels = batch["input_ids"].clone()
-    labels[labels == processor.tokenizer.pad_token_id] = -100
-    batch["labels"] = labels
+    # Mask labels: only keep the assistant's answer tokens (ASSISTANT: onwards)
+    batch["labels"] = mask_prompt_labels(batch, processor, answers)
 
     return batch["input_ids"], batch["attention_mask"], None, batch["labels"]
 

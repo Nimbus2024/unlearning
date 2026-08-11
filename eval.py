@@ -5,6 +5,7 @@ from PIL import Image
 from tqdm import tqdm
 import torch
 from transformers import LlavaForConditionalGeneration, AutoProcessor, AutoTokenizer, Idefics2ForConditionalGeneration
+from peft import PeftModel
 import pandas as pd
 import random
 import json
@@ -723,14 +724,39 @@ def main():
     torch.cuda.empty_cache()
 
     if args.model_id.startswith("llava"):
-        print("Loading LLAVA Vanilla model...")
-        model = LlavaForConditionalGeneration.from_pretrained(
-            args.cache_path,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            low_cpu_mem_usage=True,
-            local_files_only=True
-        )
+        # Detect LoRA adapter: if cache_path contains adapter_config.json, load
+        # base model + adapter; otherwise load a full checkpoint as before.
+        adapter_config = os.path.join(args.cache_path, "adapter_config.json")
+        base_model_json = os.path.join(args.cache_path, "base_model.json")
+        if os.path.exists(adapter_config):
+            print("Loading LLAVA base + LoRA adapter model...")
+            # Determine base model dir: from our marker, else vanilla default.
+            if os.path.exists(base_model_json):
+                with open(base_model_json) as f:
+                    base_dir = json.load(f)["base_model"]
+            else:
+                base_dir = "/root/autodl-tmp/models/llava-1.5-7b-hf"
+            base_model = LlavaForConditionalGeneration.from_pretrained(
+                base_dir,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+                local_files_only=True
+            )
+            model = PeftModel.from_pretrained(base_model, args.cache_path)
+            # Merge LoRA into base weights and unload adapters: faster inference
+            # (plain forward pass) than per-layer LoRA computation.
+            print("Merging LoRA adapter into base model...")
+            model = model.merge_and_unload()
+        else:
+            print("Loading LLAVA Vanilla model...")
+            model = LlavaForConditionalGeneration.from_pretrained(
+                args.cache_path,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+                local_files_only=True
+            )
     else:
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
 
