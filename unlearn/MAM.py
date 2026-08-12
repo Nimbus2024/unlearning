@@ -142,7 +142,7 @@ def compute_retain_kl(model, ref_model, input_ids, attn_mask, pixel_values, labe
     """
     Retain KL: KL(π_ref || π_θ) on retain set。
     v1 阶段 λ=0 时不调用；v2 阶段 λ>0 时启用。
-    复用自 v2 Ours.py。
+    复用自 MAM 系列实现。
     """
     outputs = model(
         input_ids=input_ids, attention_mask=attn_mask,
@@ -446,7 +446,7 @@ def main(args):
 
     # ── 记录 base 模型路径（eval 加载 base + adapter 用）──
     with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
-        json.dump({"base_model": args.vanilla_dir, "method": "OURS"}, f)
+        json.dump({"base_model": args.vanilla_dir, "method": "MAM"}, f)
 
     # ── 保存 EMA 状态 ──
     ema_state = {"M0_final": M0.item() if hasattr(M0, 'item') else float(M0),
@@ -462,7 +462,7 @@ def main(args):
 # ═══════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Ours_v2: Dynamic-γ DPO Unlearning Loss")
+    parser = argparse.ArgumentParser(description="MAM: ModalityAwareMix - Dynamic-γ DPO Unlearning Loss")
     parser.add_argument("--model_id", type=str, default='llava-hf/llava-1.5-7b-hf')
     parser.add_argument("--processor_dir", type=str, default=None,
                         help="Directory for processor/tokenizer (default: model_id cache)")
@@ -471,7 +471,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default=None,
                         help="Output dir (default: auto <run_dir>/model)")
     parser.add_argument("--run_dir", type=str, default=None,
-                        help="Unified run dir (default: results/OURS/<timestamp>)")
+                        help="Unified run dir (default: results/MAM/<timestamp>)")
     parser.add_argument("--data_split_dir", type=str, required=True,
                         help="Root directory of forget/retain data splits")
     parser.add_argument("--forget_split_ratio", type=int, default=5)
@@ -493,9 +493,9 @@ if __name__ == "__main__":
                         help="Retain KL weight (v1: 0.0, v2: >0.0)")
     args = parser.parse_args()
 
-    # ── 统一运行目录: results/OURS/<timestamp>/ (与其他 unlearn 方法一致) ──
+    # ── 统一运行目录: results/MAM/<timestamp>/ (与其他 unlearn 方法一致) ──
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = args.run_dir or os.path.join("results", "OURS", timestamp)
+    run_dir = args.run_dir or os.path.join("results", "MAM", timestamp)
     os.makedirs(run_dir, exist_ok=True)
     save_dir = args.save_dir or os.path.join(run_dir, "model")
     tb_dir = os.path.join(run_dir, "tensorboard")
