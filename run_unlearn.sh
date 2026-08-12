@@ -56,9 +56,9 @@ elif [ "${METHOD}" = "NPO" ]; then
     --oracle_model_id "${ORACLE_DIR:-chengyewang/llava_smu_ft}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
-elif [ "${METHOD}" = "MAM" ]; then
-  # MAM (ModalityAwareMix): dynamic-gamma DPO unlearn; base/ref = llava_smu_ft (SFT), processor = llava-1.5-7b-hf
-  python unlearn/MAM.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
+elif [ "${METHOD}" = "MAW" ]; then
+  # MAW (ModalityAdaptiveWeighting): dynamic-gamma DPO unlearn; base/ref = llava_smu_ft (SFT), processor = llava-1.5-7b-hf
+  python unlearn/MAW.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
     --processor_dir "${PROCESSOR_DIR:-llava-hf/llava-1.5-7b-hf}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
