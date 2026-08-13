@@ -88,7 +88,7 @@ def load_model_and_processor(args):
         print("Loading LLAVA model...")
         model = LlavaForConditionalGeneration.from_pretrained(
             args.vanilla_dir,
-            torch_dtype=torch.float16,
+            torch_dtype=torch.bfloat16,
             device_map="auto",
             low_cpu_mem_usage=True,
             local_files_only=True,
@@ -193,6 +193,11 @@ def train_collate_fn_llava_multimodal_forget(examples, processor, args):
 
 ######################### Accelerate Version #################################
 def main(args):
+    # 固定随机种子保证可复现
+    random.seed(42)
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
     # Load model and processor
 
     model, processor = load_model_and_processor(args)

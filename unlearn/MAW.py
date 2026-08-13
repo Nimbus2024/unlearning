@@ -285,6 +285,11 @@ def collate_forget_um(examples, processor, args):
 # ═══════════════════════════════════════════════════
 
 def main(args):
+    # 固定随机种子保证可复现
+    random.seed(42)
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
     # ── 加载模型 ──
     model, ref_model, processor = load_model_and_processor(args)
     tok_dir = args.processor_dir if args.processor_dir else args.model_id
