@@ -156,10 +156,7 @@ def evaluate_classification(parquet_file,  processor, tokenizer, model, args, id
                     outputs = model.generate(**inputs, max_new_tokens=50, do_sample=False)
                 generated_text = processor.decode(outputs[0][2:], skip_special_tokens=True)
                 assistant_response = generated_text.split("ASSISTANT:")[1].strip() if "ASSISTANT:" in generated_text else generated_text.strip()
-                if mode == 'default':
-                    predicted_answer = assistant_response
-                else:
-                    predicted_answer = select_answer(assistant_response,temp)
+                predicted_answer = select_answer(assistant_response,temp)
             elif args.model_id.startswith("Qwen"):
                 conversation = [
                     {
@@ -230,10 +227,7 @@ def evaluate_classification(parquet_file,  processor, tokenizer, model, args, id
                     outputs = model.generate(**inputs, max_new_tokens=50, do_sample=False)
                 generated_text = tokenizer.decode(outputs[0][2:], skip_special_tokens=True)
                 assistant_response = generated_text.split("ASSISTANT:")[1].strip() if "ASSISTANT:" in generated_text else generated_text.strip()
-                if mode == 'default':
-                    predicted_answer = assistant_response
-                else:
-                    predicted_answer = select_answer(assistant_response,temp)
+                predicted_answer = select_answer(assistant_response,temp)
             elif args.model_id.startswith("Qwen"):
                 conversation = [
                     {
