@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Callable, Optional
@@ -222,6 +223,17 @@ def collect_hidden_states(
     for h in handles:
         h.remove()
     return captured, text
+
+
+def judge_answer(generated: str, ground_truth: str, exact: bool = False) -> bool:
+    """答案判分：exact=False 时 fuzzy（gt 在生成中，或生成在 gt 中）；与 patching.py 同款。"""
+    if exact:
+        return generated.strip() == ground_truth.strip()
+    g = re.sub(r"[^a-z0-9]+", " ", generated.lower()).strip()
+    t = re.sub(r"[^a-z0-9]+", " ", ground_truth.lower()).strip()
+    if not g or not t:
+        return False
+    return g in t or t in g
 
 
 def get_last_token_hidden(hidden: dict[int, torch.Tensor]) -> dict[int, torch.Tensor]:
