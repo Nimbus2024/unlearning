@@ -5,7 +5,7 @@
 数据: retain_95 parquet
 保存: LoRA adapter + base_model.json (与其他 unlearn 方法一致)
 """
-import os, sys, json, time, argparse
+import os, sys, json, time, random, argparse
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "unlearn"))
 import torch
 import pandas as pd
@@ -21,7 +21,7 @@ from unlearn_dataset import Muitimodal_Dataset, train_collate_fn_llava_multimoda
 def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
-    multimodal_keywords = ["multi_modal_projector", "vision_model"]
+    multimodal_keywords = ["multi_modal_projector", "vision_model", "vision_tower"]
     for name, module in model.named_modules():
         if any(mm in name for mm in multimodal_keywords):
             continue
