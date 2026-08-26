@@ -134,3 +134,32 @@ Our work is built upon the foundation laid by the [MLLMU-Bench](https://github.c
 ## 🤝 Contact
 
 Please use the Hugging Face [community tab](https://huggingface.co/datasets/linbojunzi/UMU-bench/discussions) or open an issue if you have questions or feedback.
+---
+
+## 🧪 Experiment Extension: cross-modal-diagnosis/
+
+This repository also contains **`cross-modal-diagnosis/`** — our experiment code for studying **cross-modal alignment in MLLM unlearning** (mechanism analysis beyond the UMU-Bench evaluation protocol).
+
+### Whats inside
+
+
+---
+
+## Experiment Extension: cross-modal-diagnosis/
+
+This repository also contains **`cross-modal-diagnosis/`** — our experiment code for studying **cross-modal alignment in MLLM unlearning** (mechanism analysis beyond the UMU-Bench evaluation protocol).
+
+### What's inside
+
+- `src/diagnosis/` — 8 diagnostic scripts (oracle-referenced, per-run outputs):
+  - **s2_* (mechanism analysis)**: per-layer probing (`probes.py`), Fisher sensitivity attribution (`fim.py`), activation patching (`patching.py`)
+  - **s1_* (problem verification)**: cross-modal alignment / same-semantics representation shift (`s1_alignment.py`), QA vs VQA forgetting consistency (`s1_consistency.py`), MIA Min-K% (`s1_mia.py`), SUA/DUA attack probing (`s1_attack.py`)
+- `scripts/` — frozen-vision-tower retraining scripts (NPO / PO)
+- `results/` — experiment artifacts (**gitignored**; organized as `results/<method>/<timestamp>/`)
+
+### Key conventions
+
+- **Model lineage**: `vanilla` = base (LLaVA-1.5-7B, never saw UMU); `oracle` = `chengyewang/llava_smu_ft` (SFT on full UMU, the unlearning starting point); unlearn methods (NPO/PO/GA/KL/MAW/RMU) = oracle + LoRA fine-tuning; `retrain` = SFT on retain set only (ideal target).
+- **Effective unlearning** (analysis eligibility): (1) vision tower frozen during unlearning (pretrain/SFT convention, fixed in `756cdee`); (2) sufficient forgetting on the forget set (attack baseline leak rate significantly below oracle).
+- **Research questions**: Q1 — does effective unlearning shift representations of the same semantics across modalities? Q2 — is forgetting unbalanced across QA (text) and VQA (image+text)?
+- All diagnostics reference **oracle (pre-unlearning)**; outputs auto-saved per run to `results/<method>/<timestamp>/diagnosis/` (self-contained with oracle reference).
