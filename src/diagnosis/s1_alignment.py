@@ -131,65 +131,84 @@ def compute_alignment_metrics(
     model,
     processor,
     samples: List[QASample],
-    layer: int,
+    layers: List[int],
     max_new_tokens: int,
+    rep_mode: str = "last_token",
+    num_image_tokens: int = 576,
 ) -> dict:
-    """跨模态相似度矩阵。返回 {"r@1","r@5","diag_advantage","n"}。
+    """跨模态相似度矩阵（多表示层）。返回 {"layers": {str(layer): {...}}, "n", "rep_mode"}。
 
-    对每个样本取第 layer 层 last-token hidden state（bf16 → float32，L2 归一化）：
-      视觉侧 V_i = 带图前向；文本侧 T_j = 同问题纯文本前向（image=None）。
-      S = V_norm @ T_norm^T（余弦相似度矩阵）。
-      R@K = 对角线元素命中（i==j 且同行相似度排前 K）。
-      diag_advantage = mean(diag) - mean(off-diag)。
+    每层返回 {"r@1","r@5","diag_advantage","mean_diag","mean_offdiag","n"}——
+    mean_diag = 同语义对（视觉 i vs 文本 i）的余弦相似度均值（问题 1 对齐距离的直接度量，
+    对比 oracle→unlearned 的变化）；diag_advantage = mean_diag − mean_offdiag（判别性）。
+    rep_mode="last_token"（默认）：每层 last-token；rep_mode="mean_pool"：视觉侧
+    image-token 均值 + 文本侧全序列均值（CLIP 式）。
     """
     n = len(samples)
 
-    vecs_v: list[np.ndarray] = []
-    vecs_t: list[np.ndarray] = []
+    def _rep(hidden: dict, layer: int, image_present: bool) -> np.ndarray:
+        h = hidden.get(layer)
+        if h is None:
+            raise RuntimeError(f"layer {layer} 未捕获 hidden state。")
+        if rep_mode == "mean_pool":
+            h = h[0].float()  # [seq, dim]
+            if image_present:
+                h = h[:num_image_tokens].mean(dim=0)
+            else:
+                h = h.mean(dim=0)
+        else:
+            h = h[0, -1, :].float()
+        return h.detach().cpu().numpy()
+
+    # 每层分别取向量（collect_hidden_states 一次取全部 layers，缓存逐样本）
+    vecs_by_layer: dict[int, tuple[list, list]] = {li: ([], []) for li in layers}
     for s in samples:
         cap_v, _ = collect_hidden_states(
             model, processor, s.question, image=s.image,
-            layers=ALIGN_LAYERS, max_new_tokens=max_new_tokens,
+            layers=layers, max_new_tokens=max_new_tokens,
         )
         cap_t, _ = collect_hidden_states(
             model, processor, s.question, image=None,
-            layers=ALIGN_LAYERS, max_new_tokens=max_new_tokens,
+            layers=layers, max_new_tokens=max_new_tokens,
         )
-        lv = get_last_token_hidden(cap_v).get(layer)
-        lt = get_last_token_hidden(cap_t).get(layer)
-        if lv is None or lt is None:
-            raise RuntimeError(
-                f"layer {layer} 未捕获 hidden state（样本 id={s.entity_id}）。")
-        vecs_v.append(lv[0].detach().float().cpu().numpy())
-        vecs_t.append(lt[0].detach().float().cpu().numpy())
+        for li in layers:
+            vecs_by_layer[li][0].append(_rep(cap_v, li, image_present=True))
+            vecs_by_layer[li][1].append(_rep(cap_t, li, image_present=False))
 
-    V = np.stack(vecs_v)  # [n, dim]
-    T = np.stack(vecs_t)  # [n, dim]
-    V = _l2_normalize(_to_f32(V))
-    T = _l2_normalize(_to_f32(T))
-    S = V @ T.T  # [n, n] 余弦相似度
+    out_layers: dict[str, dict] = {}
+    for li in layers:
+        vecs_v, vecs_t = vecs_by_layer[li]
+        V = np.stack(vecs_v)  # [n, dim]
+        T = np.stack(vecs_t)  # [n, dim]
+        V = _l2_normalize(_to_f32(V))
+        T = _l2_normalize(_to_f32(T))
+        S = V @ T.T  # [n, n] 余弦相似度
 
-    hits1 = 0
-    hits5 = 0
-    for i in range(n):
-        row = S[i]
-        top_k = np.argsort(-row)[:5]
-        if i in top_k[:1]:
-            hits1 += 1
-        if i in top_k[:5]:
-            hits5 += 1
+        hits1 = 0
+        hits5 = 0
+        for i in range(n):
+            row = S[i]
+            top_k = np.argsort(-row)[:5]
+            if i in top_k[:1]:
+                hits1 += 1
+            if i in top_k[:5]:
+                hits5 += 1
 
-    diag = np.diag(S)
-    off_diag = S[~np.eye(n, dtype=bool)]
-    diag_mean = float(diag.mean())
-    off_mean = float(off_diag.mean()) if off_diag.size else 0.0
+        diag = np.diag(S)
+        off_diag = S[~np.eye(n, dtype=bool)]
+        diag_mean = float(diag.mean())
+        off_mean = float(off_diag.mean()) if off_diag.size else 0.0
 
-    return {
-        "r@1": float(hits1 / n),
-        "r@5": float(hits5 / n),
-        "diag_advantage": diag_mean - off_mean,
-        "n": n,
-    }
+        out_layers[str(li)] = {
+            "r@1": float(hits1 / n),
+            "r@5": float(hits5 / n),
+            "diag_advantage": diag_mean - off_mean,
+            "mean_diag": diag_mean,
+            "mean_offdiag": off_mean,
+            "n": n,
+        }
+
+    return {"layers": out_layers, "n": n, "rep_mode": rep_mode}
 
 
 def _to_f32(mat: np.ndarray) -> np.ndarray:
@@ -203,40 +222,43 @@ def _l2_normalize(mat: np.ndarray) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------
-# 图：三组柱状（R@1 / R@5 / 对角线优势 × oracle vs unlearned）
+# 图：每表示层一组指标（R@1 / R@5 / diag advantage / mean_diag × oracle vs unlearned）
 # --------------------------------------------------------------------------
 def plot_alignment(results_per_model: dict, out_png: str) -> None:
-    """三组柱状对比：每个 metric 一组，各组内 oracle vs unlearned。"""
-    metrics = [("r@1", "R@1"), ("r@5", "R@5"), ("diag_advantage", "diag advantage")]
+    """每表示层画一组四指标柱状（oracle vs unlearned）。"""
+    metrics = [("r@1", "R@1"), ("r@5", "R@5"),
+               ("diag_advantage", "diag advantage"), ("mean_diag", "mean diag")]
     model_names = list(results_per_model.keys())
     n_models = len(model_names)
+    first = results_per_model[model_names[0]]
+    layers = [int(li) for li in first["layers"].keys()] if "layers" in first else [0]
     colors = ["#4a7fd4", "#2a9d8f", "#e9c46a", "#9b5de5", "#f4a261", "#d1495b"]
     cmap = {name: colors[i % len(colors)] for i, name in enumerate(model_names)}
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), dpi=150)
-    for ax, (key, title) in zip(axes, metrics):
-        vals = []
-        for name in model_names:
-            m = results_per_model[name]
-            vals.append(m[key])
-        xs = np.arange(n_models)
-        for xi, (name, v) in enumerate(zip(model_names, vals)):
-            ax.bar(xi, v, color=cmap[name], width=0.6)
-            ax.text(xi, v, f"{v:.3f}", ha="center", va="bottom", fontsize=9)
-        ax.set_xticks(xs)
-        ax.set_xticklabels(model_names)
-        ax.set_title(title)
-        lo = min(0.0, min(vals)) if vals else 0.0
-        hi = max(vals) if vals else 1.0
-        span = max(hi - lo, 1e-3)
-        ax.set_ylim(lo - 0.1 * span, hi + 0.25 * span)
-        ax.set_ylabel("value")
-        ax.grid(True, axis="y", alpha=0.3)
-
-    fig.suptitle("s1 cross-modal alignment (oracle vs unlearned)")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-    os.makedirs(os.path.dirname(out_png), exist_ok=True)
-    fig.savefig(out_png, dpi=150)
+    fig, axes = plt.subplots(len(layers), 4, figsize=(16, 3.2 * len(layers)), dpi=150)
+    if len(layers) == 1:
+        axes = axes.reshape(1, -1)
+    for ri, li in enumerate(layers):
+        for ci, (key, title) in enumerate(metrics):
+            ax = axes[ri, ci]
+            vals = []
+            for name in model_names:
+                m = results_per_model[name]
+                layer_metrics = m["layers"][str(li)] if "layers" in m else m
+                vals.append(layer_metrics.get(key, 0.0))
+            xs = np.arange(n_models)
+            for xi, (name, v) in enumerate(zip(model_names, vals)):
+                ax.bar(xi, v, color=cmap[name], width=0.6)
+                ax.text(xi, v, f"{v:.3f}", ha="center", va="bottom", fontsize=8)
+            ax.set_xticks(xs)
+            ax.set_xticklabels(model_names, rotation=15, fontsize=8)
+            ax.set_title(f"layer {li}: {title}", fontsize=10)
+            lo = min(0.0, min(vals)) if vals else 0.0
+            hi = max(vals) if vals else 1.0
+            span = max(hi - lo, 1e-3)
+            ax.set_ylim(lo - 0.15 * span, hi + 0.15 * span)
+    fig.tight_layout()
+    fig.savefig(out_png)
     plt.close(fig)
 
 
@@ -263,6 +285,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=SEED, help="采样种子（默认 42）。")
     p.add_argument("--max_new_tokens", type=int, default=8,
                    help="前向生成最大新 token（默认 8，仅用于获取输入侧表示）。")
+    p.add_argument("--rep_mode", choices=["last_token", "mean_pool"], default="last_token",
+                   help="表示模式：last_token=每层最后 token（默认，检索判别力弱）；"
+                        "mean_pool=视觉侧 image-token 均值 + 文本侧全序列均值（CLIP 式，判别力强）。")
+    p.add_argument("--layers", type=int, nargs="+", default=[16],
+                   help="表示层列表（问题 1 协议扫描用，如 0 4 8 16；默认 16）。")
+    p.add_argument("--num_image_tokens", type=int, default=576,
+                   help="mean_pool 模式下图像 token 数（LLaVA-1.5 默认 576=24×24）。")
     p.add_argument("--out_json", default=OUT_JSON, help="输出 JSON 文件名。")
     p.add_argument("--fig_name", default=OUT_FIG, help="输出 PNG 文件名。")
     p.add_argument("--device", default="auto", help="device_map（默认 auto）。")
@@ -309,7 +338,8 @@ def main() -> int:
                 device_map=str(device), merge=True, torch_dtype=torch.bfloat16,
             )
             oracle_metrics = compute_alignment_metrics(
-                oracle_model, processor, samples, ALIGN_LLM_LAYER, args.max_new_tokens)
+                oracle_model, processor, samples, args.layers, args.max_new_tokens,
+                rep_mode=args.rep_mode, num_image_tokens=args.num_image_tokens)
             del oracle_model
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -322,7 +352,8 @@ def main() -> int:
         )
         del proc
         unlearned_metrics = compute_alignment_metrics(
-            model, processor, samples, ALIGN_LLM_LAYER, args.max_new_tokens)
+            model, processor, samples, args.layers, args.max_new_tokens,
+            rep_mode=args.rep_mode, num_image_tokens=args.num_image_tokens)
         del model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -340,7 +371,7 @@ def main() -> int:
                 name: unlearned_metrics,
             },
             "seed": args.seed,
-            "layer": ALIGN_LLM_LAYER,
+            "layers": args.layers,
             "n": n_actual,
             "n_requested": args.n_samples,
             "split": RETAIN_SPLIT,
