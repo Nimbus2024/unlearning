@@ -95,8 +95,7 @@ def load_model_and_processor(args):
     else:
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
     # Additional processor configuration if necessary
-    processor.tokenizer.padding_side = "right"  # Ensure right padding
-    processor.tokenizer.add_tokens(["<image>", "<pad>"], special_tokens=True)
+    processor.tokenizer.padding_side = "right"  # 注意训练时右padding，推理时左padding
 
     return model, processor
 
