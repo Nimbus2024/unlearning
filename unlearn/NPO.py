@@ -86,10 +86,9 @@ def load_model_and_processor(args):
         # Load LLAVA model and processor
         print("Loading LLAVA model...")
         model = LlavaForConditionalGeneration.from_pretrained(
-            args.vanilla_dir,
+            args.vanilla_dir,# TODO: 写死model id，原设计目标是支持加载本地权重，但我觉得可以全面靠拢HF
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            low_cpu_mem_usage=True,
             local_files_only=True,
         )
         processor = AutoProcessor.from_pretrained(args.model_id)
