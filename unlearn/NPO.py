@@ -61,19 +61,12 @@ from unlearn_dataset import (
 
 
 def find_all_linear_names(model):
-    cls = torch.nn.Linear
-    lora_module_names = set()
-    multimodal_keywords = ['multi_modal_projector', 'vision_model', 'vision_tower']
+    """只获取 language_model 内部的线性层（完整路径）"""
+    target_names = []
     for name, module in model.named_modules():
-        if any(mm_keyword in name for mm_keyword in multimodal_keywords):
-            continue
-        if isinstance(module, cls):
-            names = name.split('.')
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
-
-    if 'lm_head' in lora_module_names: # needed for 16-bit
-        lora_module_names.remove('lm_head')
-    return list(lora_module_names)
+        if 'language_model' in name and isinstance(module, torch.nn.Linear):
+            target_names.append(name)
+    return target_names
 
 
 # Example usage:
