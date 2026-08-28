@@ -140,18 +140,10 @@ def main(args):
             args.oracle_model_id,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            low_cpu_mem_usage=True,
             local_files_only=True,
         )
     else:
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
-
-    # Resize token embeddings to match the tokenizer
-    model.resize_token_embeddings(len(processor.tokenizer))
-    oracle_model.resize_token_embeddings(len(processor.tokenizer))
-    if len(tokenizer) > model.get_input_embeddings().weight.shape[0]:
-        print("WARNING: Resizing the embedding matrix to match the tokenizer vocab size.")
-        model.resize_token_embeddings(len(tokenizer))
 
     # LoRA configuration
     lora_config = LoraConfig(
