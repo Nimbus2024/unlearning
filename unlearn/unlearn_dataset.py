@@ -67,7 +67,6 @@ class Muitimodal_Dataset(Dataset):
             ratio = int(self.mode.split('_')[1])/100
             n = int(len(flattened_data)*(1-ratio)/ratio)
             # print(ratio,n)
-            random.seed(42)
             flattened_data = random.sample(flattened_data, n)
 
         return flattened_data
@@ -327,7 +326,6 @@ class Unimodal_Dataset(Dataset):
         if self.mode.split('_')[0]=='retain':
             ratio = int(self.mode.split('_')[1])/100
             n = int(len(flattened_data)*(1-ratio)/ratio)
-            random.seed(42)
             flattened_data = random.sample(flattened_data, n)
         return flattened_data
 
