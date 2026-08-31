@@ -35,7 +35,7 @@ TASKS = [
 SKIP_HPARAMS = {
     "run_dir", "save_dir", "tb_dir", "data_split_dir", "vanilla_dir",
     "oracle_model_id", "model_id", "lora_target_modules", "lora_dropout",
-    "max_length", "processor_dir",
+    "max_length", "processor_dir", "epoch_dir", "config_dir", "tensorboard_dir",
 }
 
 TS_RE = re.compile(r"(20\d{6}-\d{6})")
