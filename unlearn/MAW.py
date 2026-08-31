@@ -330,16 +330,12 @@ def collate_forget_um(examples, processor, args):
 
 ### 固定随机种子保证可复现
 def set_global_seed(seed=42):
-    """固定所有能想到的随机源，保证严格可复现"""
+    """固定随机种子（与 unlearning1 行为一致：不设置 cudnn 标志，保持卷积算法默认选择）"""
     os.environ['PYTHONHASHSEED'] = str(seed)  # 关闭 Python 字典哈希随机化
     random.seed(seed)
     # np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
-    # 关键：让 GPU 运算变得确定性
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 ## 如果在 DataLoader 中使用多进程加载数据，可以在 worker_init_fn 中设置随机种子，保证每个 worker 的随机性不同
 def worker_init_fn(worker_id):
