@@ -141,10 +141,10 @@ def build_metric_table(runs, modals, first_col="Run", highlight=True):
         cmid_ds.append((start, col - 1))
     lines.append(" & ".join(row0) + " \\\\")
     lines.append(" ".join(f"\\cmidrule(lr){{{s}-{e}}}" for s, e in cmid_ds))
-    lines.append(" & ".join(row1) + " \\\\")
+    lines.append(" & " + " & ".join(row1) + " \\\\")
     if n_modals == 2:
         lines.append(" ".join(f"\\cmidrule(lr){{{s}-{e}}}" for s, e in cmid_task))
-        lines.append(" & ".join(row2) + " \\\\")
+        lines.append(" & " + " & ".join(row2) + " \\\\")
     lines.append("\\midrule")
 
     rows = []
