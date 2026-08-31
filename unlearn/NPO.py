@@ -178,8 +178,9 @@ def main(args):
     # model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
-    # 梯度检查点: 多卡 DDP 下每 rank 一份完整模型, 激活内存省一半以上
-    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    # 梯度检查点默认关闭(不影响训练数值); DDP 大 batch 显存紧张时可用 --gradient_checkpointing 开启
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     # model.add_adapter(lora_config)
     # model.enable_adapters()
@@ -348,6 +349,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_length", type=int, default=384, help="Maximum sequence length")
     parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank (default 64)")
     parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA alpha (default 32)")
+    parser.add_argument("--gradient_checkpointing", action="store_true",
+                        help="Enable gradient checkpointing (default off; only needed for large DDP batches)")
     parser.add_argument("--tb_dir", type=str, default=None,
                         help="TensorBoard log dir; defaults to <run_dir>/tensorboard")
     args = parser.parse_args()
