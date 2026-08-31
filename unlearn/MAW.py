@@ -20,7 +20,6 @@ from torch.utils.data import DataLoader, Dataset as TorchDataset
 from torch.optim import AdamW
 
 from transformers import (
-    AutoTokenizer,
     AutoProcessor,
     LlavaForConditionalGeneration,
     get_scheduler,
@@ -58,7 +57,6 @@ def load_model_and_processor(args):
             args.vanilla_dir,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            low_cpu_mem_usage=True,
             local_files_only=True,
         )
         print("Loading LLAVA reference model (π_ref, same SFT, frozen)...")
@@ -66,7 +64,6 @@ def load_model_and_processor(args):
             args.vanilla_dir,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            low_cpu_mem_usage=True,
             local_files_only=True,
         )
         proc_dir = args.processor_dir if args.processor_dir else args.model_id
@@ -74,24 +71,16 @@ def load_model_and_processor(args):
     else:
         raise ValueError("Model ID not recognized or not supported.")
     processor.tokenizer.padding_side = "right"
-    processor.tokenizer.add_tokens(["<image>", "<pad>"], special_tokens=True)
     return model, ref_model, processor
 
 
 def find_all_linear_names(model):
-    """Find LoRA target modules (复用 v2 模式)"""
-    cls = torch.nn.Linear
-    lora_module_names = set()
-    multimodal_keywords = ['multi_modal_projector', 'vision_model', 'vision_tower']
+    """只获取 language_model 内部的线性层（完整路径，与 NPO.py 一致）"""
+    target_names = []
     for name, module in model.named_modules():
-        if any(mm_keyword in name for mm_keyword in multimodal_keywords):
-            continue
-        if isinstance(module, cls):
-            names = name.split('.')
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
-    if 'lm_head' in lora_module_names:
-        lora_module_names.remove('lm_head')
-    return list(lora_module_names)
+        if 'language_model' in name and isinstance(module, torch.nn.Linear):
+            target_names.append(name)
+    return target_names
 
 
 # ═══════════════════════════════════════════════════
@@ -191,10 +180,9 @@ class ForgetDataset(TorchDataset):
                 except Exception:
                     continue
             try:
-                qa = ast.literal_eval(row[col])
+                QAs = ast.literal_eval(row[col])
             except Exception:
                 continue
-            QAs = json.loads(json.dumps(qa))
             questions = QAs.get('question', {})
             answers = QAs.get('answer', {})
             for k in questions.keys():
@@ -253,8 +241,8 @@ def collate_forget_mm(examples, processor, args):
         q = ex['question']
         texts_w.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_plus']}")
-    bw = processor(text=texts_w, images=images, padding=True, truncation=True, return_tensors="pt", size={"shortest_edge": 336})
-    bl = processor(text=texts_l, images=images, padding=True, truncation=True, return_tensors="pt", size={"shortest_edge": 336})
+    bw = processor(text=texts_w, images=images, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
+    bl = processor(text=texts_l, images=images, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
                      "pixel_values": bw["pixel_values"], "labels": _make_labels(bw, processor)},
@@ -270,8 +258,8 @@ def collate_forget_um(examples, processor, args):
         q = ex['question']
         texts_w.append(f"USER: {q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: {q}\nASSISTANT: {ex['answer_plus']}")
-    bw = processor(text=texts_w, padding=True, truncation=True, return_tensors="pt", size={"shortest_edge": 336})
-    bl = processor(text=texts_l, padding=True, truncation=True, return_tensors="pt", size={"shortest_edge": 336})
+    bw = processor(text=texts_w, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
+    bl = processor(text=texts_l, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
                      "pixel_values": None, "labels": _make_labels(bw, processor)},
@@ -280,24 +268,36 @@ def collate_forget_um(examples, processor, args):
     }
 
 
+### 固定随机种子保证可复现
+def set_global_seed(seed=42):
+    """固定所有能想到的随机源，保证严格可复现"""
+    os.environ['PYTHONHASHSEED'] = str(seed)  # 关闭 Python 字典哈希随机化
+    random.seed(seed)
+    # np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # 关键：让 GPU 运算变得确定性
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+## 如果在 DataLoader 中使用多进程加载数据，可以在 worker_init_fn 中设置随机种子，保证每个 worker 的随机性不同
+def worker_init_fn(worker_id):
+    """DataLoader 多进程时调用"""
+    seed = 42 + worker_id  # 保证每个 worker 不同
+    # np.random.seed(seed)
+    random.seed(seed)
+
+
 # ═══════════════════════════════════════════════════
 # 主训练函数
 # ═══════════════════════════════════════════════════
 
 def main(args):
     # 固定随机种子保证可复现
-    random.seed(42)
-    torch.manual_seed(42)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(42)
+    set_global_seed(42)
     # ── 加载模型 ──
     model, ref_model, processor = load_model_and_processor(args)
-    tok_dir = args.processor_dir if args.processor_dir else args.model_id
-    tokenizer = AutoTokenizer.from_pretrained(tok_dir, local_files_only=True)
-    print("Tokenizer Length:", len(tokenizer))
-
-    model.resize_token_embeddings(len(processor.tokenizer))
-    ref_model.resize_token_embeddings(len(processor.tokenizer))
 
     # ── LoRA ──
     lora_config = LoraConfig(
@@ -387,6 +387,8 @@ def main(args):
             # M > 0 → M_b > M_0 → γ = 1 - α·(M_b - M_0) < 1 → γ↓ ✅ 正确
             # 修复: M = M_uni - M_mul (原为 M_mul - M_uni, 符号反了)
             M_b = M_uni - M_mul
+            # 多卡同步：margin 基于各卡本地 batch 计算，跨卡平均保证每卡 gamma/M0 一致
+            M_b = accelerator.gather(M_b.reshape(1)).mean()
             M0 = args.rho * M0 + (1.0 - args.rho) * M_b
             raw_gamma = (1.0 - args.alpha * (M_b - M0)) * args.gamma0
             gamma = max(0.0, raw_gamma.item())
@@ -450,14 +452,14 @@ def main(args):
     unwrapped_model.save_pretrained(args.save_dir)
 
     # ── 记录 base 模型路径（eval 加载 base + adapter 用）──
-    with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
-        json.dump({"base_model": args.vanilla_dir, "method": "MAW"}, f)
-
-    # ── 保存 EMA 状态 ──
     ema_state = {"M0_final": M0.item() if hasattr(M0, 'item') else float(M0),
                  "rho": args.rho, "alpha": args.alpha, "gamma0": args.gamma0}
-    with open(os.path.join(os.path.dirname(args.save_dir), "ema_state.json"), "w") as f:
-        json.dump(ema_state, f, indent=2)
+    if accelerator.is_main_process:
+        with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
+            json.dump({"base_model": args.vanilla_dir, "method": "MAW"}, f)
+        # ── 保存 EMA 状态 ──
+        with open(os.path.join(os.path.dirname(args.save_dir), "ema_state.json"), "w") as f:
+            json.dump(ema_state, f, indent=2)
 
     print(f"Model saved to: {args.save_dir}")
 
@@ -506,9 +508,10 @@ if __name__ == "__main__":
     tb_dir = os.path.join(run_dir, "tensorboard")
     os.makedirs(tb_dir, exist_ok=True)
 
-    # ── 保存超参 (args.json) ──
-    with open(os.path.join(run_dir, "args.json"), "w") as f:
-        json.dump(vars(args), f, indent=2, default=str)
+    # ── 保存超参 (args.json)，多卡时仅主进程写 ──
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        with open(os.path.join(run_dir, "args.json"), "w") as f:
+            json.dump(vars(args), f, indent=2, default=str)
     print(f"Run dir: {run_dir}")
     print(f"Model save dir: {save_dir}")
     print(f"TensorBoard log dir: {tb_dir}")
