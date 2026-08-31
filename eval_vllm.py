@@ -478,7 +478,7 @@ def main():
     random.seed(args.seed)
     forget_file = str(Path(args.data_split_folder) / f"forget_{args.forget_ratio}" / "train-00000-of-00001.parquet")
     retain_file = str(Path(args.data_split_folder) / f"retain_{100 - args.forget_ratio}" / "train-00000-of-00001.parquet")
-    required = (forget_file, retain_file, args.test_data, args.celebrity_data, args.task_data)
+    required = (forget_file, retain_file, args.celebrity_data, args.task_data)
     for path in required:
         if not Path(path).exists():
             raise FileNotFoundError(path)
@@ -487,7 +487,6 @@ def main():
     try:
         results = {
             "Forget Set Results": evaluate_scope(backend, forget_file, "forget", forget_file, args),
-            "Test Set Results": evaluate_scope(backend, args.test_data, "test", forget_file, args),
             "Retain Set (shared dataset) Results": evaluate_scope(backend, retain_file, "retain_shared", forget_file, args),
             "Retain Set (real person) Results": evaluate_scope(backend, args.celebrity_data, "retain_celebrity", forget_file, args),
         }
