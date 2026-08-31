@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 r"""Generate a LaTeX experiment log from UMU-bench vLLM eval result JSONs.
 
-Adapted from ../experiments/gen_latex.py for the eval_vllm.py result schema
-(keys like "Forget Set Results" / "Retain Set (shared dataset) Results",
-metrics: image_textual_accuracy / pure_text_accuracy /
-Image-Textual Question Accuracy / Average ROUGE-L (...)).
-Aggregate "All" = simple mean of IT and PT (the vLLM backend does not emit
-the All-modal / Any-modal fields that the original eval.py produces).
+Layout:
+  - Section Overview: one row per method/model using its LATEST run (row label
+    = method name). Every column: best value green, worst value red.
+  - One section per method/model (Vanilla, Origin/Oracle, NPO, PO, GA, MAW, ...):
+    * subsection 1: hyperparameter table (one row per run, labeled by timestamp)
+    * subsection 2+: evaluation tables (Aggregate All, Per-modal IT/PT)
 
 Usage:
-  python gen_latex.py OUT.tex \
-    "NPO run1=results/NPO/20260831-210334/NPO_results_final_evaluation_results.json" \
-    "NPO run2=results/NPO/20260831-214425/..._results.json"
+  python experiments/gen_latex.py OUT.tex \
+    "NPO:20260831-210334=results/NPO/20260831-210334/NPO_results_final_evaluation_results.json,20260831-214425=..." \
+    "PO:20260830-...=results/PO/.../PO_results_final_evaluation_results.json"
 """
 import json
 import os
 import re
 import sys
 
-# dataset (table section label, JSON section key, direction: forget lower is better)
 DATASETS = [
     ("Forget", "Forget Set Results", "lower_better"),
     ("Retain", "Retain Set (shared dataset) Results", "higher_better"),
@@ -39,16 +38,23 @@ SKIP_HPARAMS = {
     "max_length", "processor_dir",
 }
 
+TS_RE = re.compile(r"(20\d{6}-\d{6})")
+
 
 def esc(s):
     return (str(s).replace("%", "\\%").replace("_", "\\_")
-            .replace("&", "\\&").replace("#", "\\#").replace("~", "\\textasciitilde{}"))
+            .replace("&", "\\&").replace("#", "\\#"))
+
+
+def run_ts(label):
+    m = TS_RE.search(label)
+    return m.group(1) if m else ""
 
 
 def load_run(path):
     with open(path) as f:
         d = json.load(f)
-    cells = {}  # (di, ti, modal) -> (value, fmt)
+    cells = {}
     for di, (_, sec_key, _) in enumerate(DATASETS):
         sec = d.get(sec_key)
         if sec is None:
@@ -76,7 +82,6 @@ def load_args(path):
 
 
 def build_hparam_table(runs):
-    """runs: list of (label, cells, args). Show core hyperparams."""
     keys = []
     for _, _, args in runs:
         if args:
@@ -110,13 +115,12 @@ def build_hparam_table(runs):
 
 
 def build_metric_table(runs, modals):
-    """runs: list of (label, cells). modals: ["All"] or ["IT", "PT"]."""
     n_modals = len(modals)
+    ncols = len(DATASETS) * len(TASKS) * n_modals
     lines = ["\\begin{table}[H]", "\\centering", "\\resizebox{\\linewidth}{!}{%",
-             "\\begin{tabular}{l" + "c" * (len(DATASETS) * len(TASKS) * n_modals) + "}",
+             "\\begin{tabular}{l" + "c" * ncols + "}",
              "\\toprule"]
 
-    # header
     row0 = ["\\multirow{3}{*}{Run}"] if n_modals == 2 else ["\\multirow{2}{*}{Run}"]
     row1, row2 = [], []
     cmid_ds, cmid_task = [], []
@@ -141,7 +145,6 @@ def build_metric_table(runs, modals):
         lines.append(" & ".join(row2) + " \\\\")
     lines.append("\\midrule")
 
-    # data rows
     rows = []
     for label, cells in runs:
         row = [f"\\textbf{{{esc(label)}}}"]
@@ -152,19 +155,14 @@ def build_metric_table(runs, modals):
                     row.append(fmt % val)
         rows.append(row)
 
-    # highlight best (green) / worst (red) per column by direction
-    ncols = len(rows[0]) - 1
     for ci in range(ncols):
-        di, ti, _ = None, None, None
-        # compute column's dataset direction
         acc = 0
-        prefix = 2
+        di = ti = mi = 0
         for dd in range(len(DATASETS)):
             for tt in range(len(TASKS)):
-                seg = n_modals
-                if ci >= acc and ci < acc + seg:
+                if ci < acc + n_modals:
                     di, ti, mi = dd, tt, ci - acc
-                acc += seg
+                acc += n_modals
         direction = DATASETS[di][2]
         vals = [float(rows[r][ci + 1]) for r in range(len(rows))]
         if direction == "lower_better":
@@ -183,19 +181,47 @@ def build_metric_table(runs, modals):
     return "\n".join(lines)
 
 
+def parse_argv(argv):
+    """Return dict: method_name -> list of (label, path)."""
+    methods = {}
+    for arg in argv:
+        if ":" in arg:
+            name, rest = arg.split(":", 1)
+        else:
+            name, rest = "Unlabeled", arg
+        runs = []
+        for entry in rest.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            label, path = entry.split("=", 1)
+            runs.append((label.strip(), path.strip()))
+        methods.setdefault(name, []).extend(runs)
+    return methods
+
+
+def load_method(method, runs):
+    loaded = []
+    for label, path in runs:
+        if not os.path.exists(path):
+            print(f"WARNING: missing {path}, skipped")
+            continue
+        loaded.append((label, load_run(path), load_args(path)))
+    loaded.sort(key=lambda r: (run_ts(r[0]) or "9", r[0]))
+    return loaded
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(1)
     out_path = sys.argv[1]
-    runs = []
-    for arg in sys.argv[2:]:
-        label, path = arg.split("=", 1)
-        runs.append((label, load_run(path), load_args(path)))
-    if not runs:
-        print(__doc__)
-        sys.exit(1)
-    groups = [("NPO", runs)]
+    raw = parse_argv(sys.argv[2:])
+    methods = {}
+    for name, runs in raw.items():
+        loaded = load_method(name, runs)
+        if loaded:
+            methods[name] = loaded
 
     doc = [
         "% Auto-generated experiment log (vLLM eval backend).",
@@ -210,37 +236,23 @@ def main():
         "\\begin{document}",
         "\\title{UMU-Bench Unlearning Experiment Log (vLLM backend)}",
         "\\maketitle",
-        "",
         "\\section*{Overview}",
         "",
+        "One row per method/model (latest run). Green = best, red = worst per column; "
+        "Forget lower is better, Retain/Real higher is better. "
+        "Aggregate All = mean of IT/PT.",
+        "",
     ]
-    all_runs = []
-    for name, runs in groups:
-        for label, cells, args in runs:
-            all_runs.append((f"{name} {label}", cells))
-    doc.append("Aggregate All = mean of IT/PT (vLLM backend does not emit All/Any-modal fields).")
-    doc.append("Green = best, red = worst per column (Forget lower is better, Retain/Real higher is better).")
-    doc.append("")
-    doc.append(build_metric_table(all_runs, ["All"]))
-    doc.append("")
-    doc.append("\\section*{Per-modal (IT / PT) scores}")
-    doc.append("")
-    doc.append(build_metric_table(all_runs, ["IT", "PT"]))
+
+    overview = []
+    for name, runs in methods.items():
+        latest = max(runs, key=lambda r: run_ts(r[0]))
+        overview.append((name, latest[1]))
+    doc.append(build_metric_table(overview, ["All"]))
     doc.append("")
     doc.append("\\newpage")
 
-    doc.append("\\section*{Failed Runs}")
-    doc.append("")
-    doc.append("\\begin{itemize}")
-    doc.append("\\item \\textbf{NPO beta=0.1, lr=5e-5, epochs=5, batch=24, r=8} "
-               "(run 20260831-215752): model collapsed to repetitive degenerate "
-               "output (e.g. \\texttt{PAPAPA...}); all metrics 0.0. Cause: "
-               "beta=0.1 amplifies NPO loss by $2/\\\\beta=20$ while lr=5e-5 "
-               "is 8x the baseline 6.2e-6, gradient magnitude too high.")
-    doc.append("\\end{itemize}")
-    doc.append("")
-
-    for name, runs in groups:
+    for name, runs in methods.items():
         label = re.sub(r"[^a-zA-Z0-9-]", "-", name.lower()).strip("-")
         doc.append(f"\\section{{{esc(name)}}}")
         doc.append(f"\\label{{sec:experiment-{label}}}")
@@ -262,7 +274,8 @@ def main():
     doc.append("\\end{document}")
     with open(out_path, "w") as f:
         f.write("\n".join(doc) + "\n")
-    print(f"Wrote {out_path}")
+    print(f"Wrote {out_path} ({len(methods)} methods, "
+          f"{sum(len(v) for v in methods.values())} runs)")
 
 
 if __name__ == "__main__":
