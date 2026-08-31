@@ -141,8 +141,8 @@ def main(args):
     # Load model and processor
 
     model, processor = load_model_and_processor(args)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
-    print("Tokenizer Length: ", len(tokenizer))
+    # tokenizer = AutoTokenizer.from_pretrained(args.model_id)
+    # print("Tokenizer Length: ", len(tokenizer))
     if args.model_id.startswith("llava"):
         # Load LLAVA model and processor
         print("Loading Oracle LLAVA model...")
@@ -276,8 +276,8 @@ def main(args):
             neg_log_ratios = loss - oracle_loss_uni
             loss_uni = (-F.logsigmoid(args.beta * neg_log_ratios).mean() * 2 / args.beta)*args.alpha
             # print('loss_mul:',loss_uni)
-            accelerator.clip_grad_norm_(model.parameters(), max_norm=1.0)
             accelerator.backward(loss_uni)
+            accelerator.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             optimizer.zero_grad()
             lr_scheduler.step()

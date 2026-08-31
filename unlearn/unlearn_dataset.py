@@ -52,9 +52,10 @@ class Muitimodal_Dataset(Dataset):
             except Exception as e:
                 print(f"Error loading image at index {idx}: {e}")
                 continue
-            python_dict = ast.literal_eval(row['MM_QA'])
-            json_str = json.dumps(python_dict, indent=4)
-            QAs = json.loads(json_str)
+            # python_dict = ast.literal_eval(row['MM_QA'])
+            # json_str = json.dumps(python_dict, indent=4)
+            # QAs = json.loads(json_str)
+            QAs = ast.literal_eval(row['MM_QA'])
             questions = QAs['question']
             answers = QAs['answer']
             for k in questions.keys():
@@ -155,6 +156,8 @@ def mask_prompt_labels(batch, processor, answers):
         if not torch.equal(row[start:end + 1], torch.tensor(ans_ids, device=row.device)):
             raise RuntimeError(f"answer tail alignment failed for sample {i}")
         labels[i, :start] = -100
+    # 由于训练时右padding，将 padding 位置也设为 -100
+    labels[input_ids == pad_id] = -100
     return labels
 
 
@@ -182,6 +185,7 @@ def train_collate_fn_llava_multimodal(examples, processor, args):
         images=images,
         padding=True,
         truncation=True,
+        add_special_tokens=False,   # 避免添加特殊token导致后续prompt mask有误
         # max_length=args.max_length,
         return_tensors="pt"
     )
@@ -399,6 +403,7 @@ def train_collate_fn_llava_unimodal(examples, processor, args):
         padding=True,
         truncation=True,
         # max_length=args.max_length,
+        add_special_tokens=False,   # 避免添加特殊token导致后续prompt mask有误
         return_tensors="pt"
     )
     # Mask labels: only keep the assistant's answer tokens (ASSISTANT: onwards)
