@@ -114,7 +114,7 @@ def build_hparam_table(runs):
     return "\n".join(lines)
 
 
-def build_metric_table(runs, modals, first_col="Run"):
+def build_metric_table(runs, modals, first_col="Run", highlight=True):
     n_modals = len(modals)
     ncols = len(DATASETS) * len(TASKS) * n_modals
     arrow = {"lower_better": "$\\downarrow$", "higher_better": "$\\uparrow$"}
@@ -157,25 +157,26 @@ def build_metric_table(runs, modals, first_col="Run"):
                     row.append(fmt % val)
         rows.append(row)
 
-    for ci in range(ncols):
-        acc = 0
-        di = ti = mi = 0
-        for dd in range(len(DATASETS)):
-            for tt in range(len(TASKS)):
-                if ci < acc + n_modals:
-                    di, ti, mi = dd, tt, ci - acc
-                acc += n_modals
-        direction = DATASETS[di][2]
-        vals = [float(rows[r][ci + 1]) for r in range(len(rows))]
-        if direction == "lower_better":
-            best_i, worst_i = vals.index(min(vals)), vals.index(max(vals))
-        else:
-            best_i, worst_i = vals.index(max(vals)), vals.index(min(vals))
-        for r in range(len(rows)):
-            if r == best_i:
-                rows[r][ci + 1] = f"\\textcolor{{umugreen}}{{{rows[r][ci + 1]}}}"
-            elif r == worst_i:
-                rows[r][ci + 1] = f"\\textcolor{{umured}}{{{rows[r][ci + 1]}}}"
+    if highlight:
+        for ci in range(ncols):
+            acc = 0
+            di = ti = mi = 0
+            for dd in range(len(DATASETS)):
+                for tt in range(len(TASKS)):
+                    if ci < acc + n_modals:
+                        di, ti, mi = dd, tt, ci - acc
+                    acc += n_modals
+            direction = DATASETS[di][2]
+            vals = [float(rows[r][ci + 1]) for r in range(len(rows))]
+            if direction == "lower_better":
+                best_i, worst_i = vals.index(min(vals)), vals.index(max(vals))
+            else:
+                best_i, worst_i = vals.index(max(vals)), vals.index(min(vals))
+            for r in range(len(rows)):
+                if r == best_i:
+                    rows[r][ci + 1] = f"\\textcolor{{umugreen}}{{{rows[r][ci + 1]}}}"
+                elif r == worst_i:
+                    rows[r][ci + 1] = f"\\textcolor{{umured}}{{{rows[r][ci + 1]}}}"
 
     for row in rows:
         lines.append(" & ".join(row) + " \\\\")
@@ -279,7 +280,7 @@ def main():
         doc.append("")
         doc.append("\\subsection{Aggregate (All) scores}")
         doc.append("")
-        doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["All"]))
+        doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["All"], highlight=False))
         doc.append("")
         doc.append("\\noindent\\small\\emph{Aggregate All = mean of IT/PT. For Forget "
                    "lower is better ($\\downarrow$); Retain/Real higher is better "
@@ -287,7 +288,7 @@ def main():
         doc.append("")
         doc.append("\\subsection{Per-modal (IT / PT) scores}")
         doc.append("")
-        doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["IT", "PT"]))
+        doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["IT", "PT"], highlight=False))
         doc.append("")
         doc.append("\\noindent\\small\\emph{IT = Image-Textual accuracy / ROUGE-L on "
                    "multimodal questions; PT = Pure-Text accuracy / ROUGE-L on "
