@@ -367,16 +367,14 @@ def main(args):
 
     # ── LoRA ──
     lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
-    args.lora_r = lora_config.r
-    args.lora_alpha = lora_config.alpha
     args.lora_dropout = lora_config.lora_dropout
     args.lora_target_modules = sorted(lora_config.target_modules)
     # args.json 需在 lora 配置确定后写入且仅主进程写（多卡时序一致）
@@ -617,6 +615,8 @@ if __name__ == "__main__":
                         help="Sequence length; must leave room for LLaVA image tokens")
     # DPO
     parser.add_argument("--beta", type=float, default=0.4, help="DPO temperature")
+    parser.add_argument("--lora_r", type=int, default=8, help="LoRA rank (default 8)")
+    parser.add_argument("--lora_alpha", type=int, default=16, help="LoRA alpha (default 16)")
     # Dynamic gamma
     parser.add_argument("--gamma0", type=float, default=0.25,
                         help="Base unimodal loss weight")

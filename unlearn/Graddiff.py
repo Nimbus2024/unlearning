@@ -150,14 +150,12 @@ def main(args):
 
     # LoRA configuration
     lora_config = LoraConfig(
-        r=64, #32
-        lora_alpha=32, #8
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         lora_dropout=0.05,
         target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
-    args.lora_r = lora_config.r
-    args.lora_alpha = lora_config.alpha
     args.lora_dropout = lora_config.lora_dropout
     args.lora_target_modules = sorted(lora_config.target_modules)
 
@@ -349,6 +347,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--num_epochs", type=int, default=5, help="Number of epochs for training")
     parser.add_argument("--max_length", type=int, default=384, help="Maximum sequence length")
+    parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank (default 64)")
+    parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA alpha (default 32)")
     parser.add_argument("--tb_dir", type=str, default=None,
                         help="TensorBoard log dir; defaults to <run_dir>/tensorboard")
     args = parser.parse_args()
