@@ -43,12 +43,13 @@ One row per method/model (latest run). Green = best, red = worst per column; For
 \begin{table}[H]
 \centering
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{lcccccccc}
+\begin{tabular}{lccccccccc}
 \toprule
-Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lora\_r & lora\_alpha \\
+Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lora\_r & lora\_alpha & gradient\_checkpointing \\
 \midrule
-\textbf{20260831-210334} & 5 & 24 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 \\
-\textbf{20260831-214425} & 5 & 8 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 \\
+\textbf{20260831-210334} & 5 & 24 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 & -- \\
+\textbf{20260831-214425} & 5 & 8 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 & -- \\
+\textbf{20260831-215752} & 5 & 24 & 1 & 0.1 & 5e-05 & 5 & 8 & 16 & F \\
 \bottomrule
 \end{tabular}
 }
@@ -65,8 +66,9 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
 \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
-\textbf{20260831-210334} & \textcolor{umured}{80.0} & \textcolor{umured}{75.0} & \textcolor{umured}{0.639} & \textcolor{umugreen}{83.8} & \textcolor{umugreen}{72.4} & \textcolor{umured}{0.653} & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.172} \\
-\textbf{20260831-214425} & \textcolor{umugreen}{83.0} & \textcolor{umugreen}{77.0} & \textcolor{umugreen}{0.653} & \textcolor{umured}{83.7} & \textcolor{umured}{72.2} & \textcolor{umugreen}{0.658} & 29.4 & \textcolor{umured}{43.6} & 0.172 \\
+\textbf{20260831-210334} & 80.0 & 75.0 & 0.639 & \textcolor{umugreen}{83.8} & \textcolor{umugreen}{72.4} & 0.653 & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.172} \\
+\textbf{20260831-214425} & \textcolor{umugreen}{83.0} & \textcolor{umugreen}{77.0} & \textcolor{umugreen}{0.653} & 83.7 & 72.2 & \textcolor{umugreen}{0.658} & 29.4 & 43.6 & 0.172 \\
+\textbf{20260831-215752} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} \\
 \bottomrule
 \end{tabular}
 }
@@ -87,8 +89,9 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
 IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
 \midrule
-\textbf{20260831-210334} & \textcolor{umured}{90.0} & \textcolor{umured}{70.0} & \textcolor{umugreen}{74.0} & \textcolor{umured}{76.0} & \textcolor{umured}{0.741} & \textcolor{umured}{0.536} & \textcolor{umugreen}{95.8} & \textcolor{umugreen}{71.9} & \textcolor{umugreen}{76.2} & \textcolor{umured}{68.5} & \textcolor{umured}{0.753} & \textcolor{umured}{0.554} & \textcolor{umugreen}{27.1} & \textcolor{umugreen}{31.7} & \textcolor{umugreen}{40.5} & \textcolor{umured}{47.1} & \textcolor{umugreen}{0.153} & \textcolor{umured}{0.191} \\
-\textbf{20260831-214425} & \textcolor{umugreen}{92.0} & \textcolor{umugreen}{74.0} & 74.0 & \textcolor{umugreen}{80.0} & \textcolor{umugreen}{0.761} & \textcolor{umugreen}{0.544} & 95.8 & \textcolor{umured}{71.7} & \textcolor{umured}{75.5} & \textcolor{umugreen}{68.9} & \textcolor{umugreen}{0.754} & \textcolor{umugreen}{0.562} & 27.1 & 31.7 & \textcolor{umured}{39.9} & \textcolor{umugreen}{47.4} & \textcolor{umured}{0.152} & \textcolor{umugreen}{0.192} \\
+\textbf{20260831-210334} & 90.0 & 70.0 & \textcolor{umugreen}{74.0} & 76.0 & 0.741 & 0.536 & \textcolor{umugreen}{95.8} & \textcolor{umugreen}{71.9} & \textcolor{umugreen}{76.2} & 68.5 & 0.753 & 0.554 & \textcolor{umugreen}{27.1} & \textcolor{umugreen}{31.7} & \textcolor{umugreen}{40.5} & 47.1 & \textcolor{umugreen}{0.153} & 0.191 \\
+\textbf{20260831-214425} & \textcolor{umugreen}{92.0} & \textcolor{umugreen}{74.0} & 74.0 & \textcolor{umugreen}{80.0} & \textcolor{umugreen}{0.761} & \textcolor{umugreen}{0.544} & 95.8 & 71.7 & 75.5 & \textcolor{umugreen}{68.9} & \textcolor{umugreen}{0.754} & \textcolor{umugreen}{0.562} & 27.1 & 31.7 & 39.9 & \textcolor{umugreen}{47.4} & 0.152 & \textcolor{umugreen}{0.192} \\
+\textbf{20260831-215752} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} & \textcolor{umured}{0.000} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} & \textcolor{umured}{0.000} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.000} & \textcolor{umured}{0.000} \\
 \bottomrule
 \end{tabular}
 }

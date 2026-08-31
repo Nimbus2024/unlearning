@@ -248,8 +248,16 @@ def main():
 
     overview = []
     for name, runs in methods.items():
-        latest = max(runs, key=lambda r: run_ts(r[0]))
-        overview.append((name, latest[1]))
+        # latest run with non-trivial metrics (a collapsed/failed run shows all 0)
+        row = None
+        for _, cells, _ in reversed(runs):
+            if any(v != 0 for (_, _, _), (v, _) in cells.items()):
+                row = (name, cells)
+                break
+        if row is None and runs:
+            row = (name, runs[-1][1])
+        if row is not None:
+            overview.append(row)
     doc.append(build_metric_table(overview, ["All"], first_col="Method"))
     doc.append("")
     doc.append("\\noindent\\small\\emph{Each row uses the latest run of the method. "
