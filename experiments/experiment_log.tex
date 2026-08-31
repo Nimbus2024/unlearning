@@ -1,0 +1,111 @@
+% Auto-generated experiment log (vLLM eval backend).
+% Regenerate with: python experiments/gen_latex.py experiments/experiment_log.tex ...
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[table]{xcolor}
+\definecolor{umugreen}{HTML}{228B22}
+\definecolor{umured}{HTML}{B22222}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\title{UMU-Bench Unlearning Experiment Log (vLLM backend)}
+\maketitle
+
+\section*{Overview}
+
+Aggregate All = mean of IT/PT (vLLM backend does not emit All/Any-modal fields).
+Green = best, red = worst per column (Forget lower is better, Retain/Real higher is better).
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccccccc}
+\toprule
+\multirow{2}{*}{Run} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
+\midrule
+\textbf{NPO NPO-single-b24-eps4-beta0.4-lr6.2e-6} & \textcolor{umugreen}{80.0} & \textcolor{umugreen}{75.0} & \textcolor{umugreen}{0.639} & \textcolor{umugreen}{83.8} & \textcolor{umugreen}{72.4} & \textcolor{umured}{0.653} & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.172} \\
+\textbf{NPO NPO-ddp-g32-eps4-beta0.4-lr6.2e-6} & \textcolor{umured}{83.0} & \textcolor{umured}{77.0} & \textcolor{umured}{0.653} & \textcolor{umured}{83.7} & \textcolor{umured}{72.2} & \textcolor{umugreen}{0.658} & 29.4 & \textcolor{umured}{43.6} & 0.172 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\section*{Per-modal (IT / PT) scores}
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccccccccccccccc}
+\toprule
+\multirow{3}{*}{Run} & \multicolumn{6}{c}{Forget} & \multicolumn{6}{c}{Retain} & \multicolumn{6}{c}{Real} \\
+\cmidrule(lr){2-7} \cmidrule(lr){8-13} \cmidrule(lr){14-19}
+\multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
+IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
+\midrule
+\textbf{NPO NPO-single-b24-eps4-beta0.4-lr6.2e-6} & \textcolor{umugreen}{90.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{74.0} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{0.741} & \textcolor{umugreen}{0.536} & \textcolor{umugreen}{95.8} & \textcolor{umugreen}{71.9} & \textcolor{umugreen}{76.2} & \textcolor{umured}{68.5} & \textcolor{umured}{0.753} & \textcolor{umured}{0.554} & \textcolor{umugreen}{27.1} & \textcolor{umugreen}{31.7} & \textcolor{umugreen}{40.5} & \textcolor{umured}{47.1} & \textcolor{umugreen}{0.153} & \textcolor{umured}{0.191} \\
+\textbf{NPO NPO-ddp-g32-eps4-beta0.4-lr6.2e-6} & \textcolor{umured}{92.0} & \textcolor{umured}{74.0} & 74.0 & \textcolor{umured}{80.0} & \textcolor{umured}{0.761} & \textcolor{umured}{0.544} & 95.8 & \textcolor{umured}{71.7} & \textcolor{umured}{75.5} & \textcolor{umugreen}{68.9} & \textcolor{umugreen}{0.754} & \textcolor{umugreen}{0.562} & 27.1 & 31.7 & \textcolor{umured}{39.9} & \textcolor{umugreen}{47.4} & \textcolor{umured}{0.152} & \textcolor{umugreen}{0.192} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\newpage
+\section*{Failed Runs}
+
+\begin{itemize}
+\item \textbf{NPO beta=0.1, lr=5e-5, epochs=5, batch=24, r=8} (run 20260831-215752): model collapsed to repetitive degenerate output (e.g. \texttt{PAPAPA...}); all metrics 0.0. Cause: beta=0.1 amplifies NPO loss by $2/\\beta=20$ while lr=5e-5 is 8x the baseline 6.2e-6, gradient magnitude too high.
+\end{itemize}
+
+\section{NPO}
+\label{sec:experiment-npo}
+
+\subsection{Hyperparameters}
+
+\emph{No hyperparameters recorded.}
+
+\subsection{Aggregate (All) scores}
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccccccc}
+\toprule
+\multirow{2}{*}{Run} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
+\midrule
+\textbf{NPO-single-b24-eps4-beta0.4-lr6.2e-6} & \textcolor{umugreen}{80.0} & \textcolor{umugreen}{75.0} & \textcolor{umugreen}{0.639} & \textcolor{umugreen}{83.8} & \textcolor{umugreen}{72.4} & \textcolor{umured}{0.653} & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.172} \\
+\textbf{NPO-ddp-g32-eps4-beta0.4-lr6.2e-6} & \textcolor{umured}{83.0} & \textcolor{umured}{77.0} & \textcolor{umured}{0.653} & \textcolor{umured}{83.7} & \textcolor{umured}{72.2} & \textcolor{umugreen}{0.658} & 29.4 & \textcolor{umured}{43.6} & 0.172 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Per-modal (IT / PT) scores}
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccccccccccccccc}
+\toprule
+\multirow{3}{*}{Run} & \multicolumn{6}{c}{Forget} & \multicolumn{6}{c}{Retain} & \multicolumn{6}{c}{Real} \\
+\cmidrule(lr){2-7} \cmidrule(lr){8-13} \cmidrule(lr){14-19}
+\multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
+IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
+\midrule
+\textbf{NPO-single-b24-eps4-beta0.4-lr6.2e-6} & \textcolor{umugreen}{90.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{74.0} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{0.741} & \textcolor{umugreen}{0.536} & \textcolor{umugreen}{95.8} & \textcolor{umugreen}{71.9} & \textcolor{umugreen}{76.2} & \textcolor{umured}{68.5} & \textcolor{umured}{0.753} & \textcolor{umured}{0.554} & \textcolor{umugreen}{27.1} & \textcolor{umugreen}{31.7} & \textcolor{umugreen}{40.5} & \textcolor{umured}{47.1} & \textcolor{umugreen}{0.153} & \textcolor{umured}{0.191} \\
+\textbf{NPO-ddp-g32-eps4-beta0.4-lr6.2e-6} & \textcolor{umured}{92.0} & \textcolor{umured}{74.0} & 74.0 & \textcolor{umured}{80.0} & \textcolor{umured}{0.761} & \textcolor{umured}{0.544} & 95.8 & \textcolor{umured}{71.7} & \textcolor{umured}{75.5} & \textcolor{umugreen}{68.9} & \textcolor{umugreen}{0.754} & \textcolor{umugreen}{0.562} & 27.1 & 31.7 & \textcolor{umured}{39.9} & \textcolor{umugreen}{47.4} & \textcolor{umured}{0.152} & \textcolor{umugreen}{0.192} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\newpage
+\end{document}
