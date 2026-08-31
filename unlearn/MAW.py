@@ -16,16 +16,18 @@ from io import BytesIO
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset as TorchDataset
+from torch.utils.data import DataLoader, Dataset as TorchDataset, RandomSampler
 from torch.optim import AdamW
 
 from transformers import (
+    AutoTokenizer,
     AutoProcessor,
     LlavaForConditionalGeneration,
     get_scheduler,
 )
 from peft import PeftModel, LoraConfig, get_peft_model
 from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs
 from tqdm import tqdm
 import ast
 
@@ -33,6 +35,7 @@ import ast
 from unlearn_dataset import (
     Muitimodal_Dataset,
     Unimodal_Dataset,
+    mask_prompt_labels,
     train_collate_fn_llava_multimodal,
     train_collate_fn_llava_unimodal,
 )
@@ -53,39 +56,76 @@ def load_model_and_processor(args):
     """加载 π_θ (SFT + LoRA) 和 π_ref (冻结 SFT)"""
     if args.model_id.startswith("llava"):
         print("Loading LLAVA policy model (π_θ)...")
-        model = LlavaForConditionalGeneration.from_pretrained(
-            args.vanilla_dir,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            local_files_only=True,
-        )
+        load_kwargs = dict(torch_dtype=torch.bfloat16, low_cpu_mem_usage=True,
+                           local_files_only=True)
+        # Under accelerate launch, keep one complete replica per rank.  The
+        # previous device_map="auto" would split every replica across all GPUs
+        # and conflict with distributed data parallelism.
+        if "LOCAL_RANK" in os.environ:
+            load_kwargs["device_map"] = {"": int(os.environ["LOCAL_RANK"])}
+        else:
+            load_kwargs["device_map"] = "auto"
+        model = LlavaForConditionalGeneration.from_pretrained(args.vanilla_dir, **load_kwargs)
         print("Loading LLAVA reference model (π_ref, same SFT, frozen)...")
-        ref_model = LlavaForConditionalGeneration.from_pretrained(
-            args.vanilla_dir,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            local_files_only=True,
-        )
+        ref_model = LlavaForConditionalGeneration.from_pretrained(args.vanilla_dir, **load_kwargs)
         proc_dir = args.processor_dir if args.processor_dir else args.model_id
         processor = AutoProcessor.from_pretrained(proc_dir, local_files_only=True)
+        # LLaVA's model expects patch tokens plus the original <image>
+        # placeholder (576 for 336x336/14), while older processor configs omit
+        # this additional token and expand to 575.
+        processor.num_additional_image_tokens = 1
     else:
         raise ValueError("Model ID not recognized or not supported.")
     processor.tokenizer.padding_side = "right"
+    processor.tokenizer.add_tokens(["<image>", "<pad>"], special_tokens=True)
     return model, ref_model, processor
 
 
 def find_all_linear_names(model):
-    """只获取 language_model 内部的线性层（完整路径，与 NPO.py 一致）"""
-    target_names = []
+    """Return all language-model attention and MLP projection suffixes."""
+    target_suffixes = {
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    }
+    multimodal_keywords = ['multi_modal_projector', 'vision_model', 'vision_tower']
+    lora_module_names = []
     for name, module in model.named_modules():
-        if 'language_model' in name and isinstance(module, torch.nn.Linear):
-            target_names.append(name)
-    return target_names
+        if any(mm_keyword in name for mm_keyword in multimodal_keywords):
+            continue
+        if isinstance(module, torch.nn.Linear) and name.rsplit('.', 1)[-1] in target_suffixes:
+            lora_module_names.append(name)
+    found_suffixes = {name.rsplit('.', 1)[-1] for name in lora_module_names}
+    missing = target_suffixes - found_suffixes
+    if missing:
+        raise ValueError(f"Expected LoRA target modules not found: {sorted(missing)}")
+    return sorted(lora_module_names)
 
 
 # ═══════════════════════════════════════════════════
 # 核心 Loss 函数（可移植设计）
 # ═══════════════════════════════════════════════════
+
+def _sequence_logprob(logits, labels, normalize=False):
+    """Return one answer log-probability per sample.
+
+    ``labels`` contains ``-100`` for prompt and padding tokens.  The causal
+    shift is applied here to match Hugging Face causal-LM loss semantics.
+    """
+    log_probs = F.log_softmax(logits[:, :-1], dim=-1)
+    targets = labels[:, 1:]
+    valid = targets.ne(-100)
+    valid_counts = valid.sum(dim=-1)
+    if (valid_counts == 0).any():
+        bad = (valid_counts == 0).nonzero(as_tuple=True)[0].tolist()
+        raise ValueError(f"DPO batch contains samples without answer tokens: {bad}")
+    safe_targets = targets.masked_fill(~valid, 0)
+    token_log_probs = log_probs.gather(-1, safe_targets.unsqueeze(-1)).squeeze(-1)
+    token_log_probs = token_log_probs.masked_fill(~valid, 0.0)
+    sequence_log_probs = token_log_probs.sum(dim=-1)
+    if normalize:
+        sequence_log_probs = sequence_log_probs / valid.sum(dim=-1).clamp_min(1)
+    return sequence_log_probs
+
 
 def compute_forget_dpo_loss(model, ref_model, batch_w, batch_l, beta=0.4):
     """
@@ -94,7 +134,7 @@ def compute_forget_dpo_loss(model, ref_model, batch_w, batch_l, beta=0.4):
 
     公式:
       L_DPO = -log σ(β · [r(x, y_w) - r(x, y_l)])
-      其中 r(x, y) = log(π_θ/π_ref) = CE_ref(y|x) - CE_θ(y|x)  (标量，batch 均值)
+      其中 r(x, y) = log π_θ(y|x) - log π_ref(y|x)
 
     Returns:
       dpo_loss (scalar): DPO loss
@@ -103,28 +143,40 @@ def compute_forget_dpo_loss(model, ref_model, batch_w, batch_l, beta=0.4):
     # Policy model forward
     out_w = model(
         input_ids=batch_w["input_ids"], attention_mask=batch_w["attention_mask"],
-        pixel_values=batch_w.get("pixel_values"), labels=batch_w["labels"],
+        pixel_values=batch_w.get("pixel_values"),
     )
     out_l = model(
         input_ids=batch_l["input_ids"], attention_mask=batch_l["attention_mask"],
-        pixel_values=batch_l.get("pixel_values"), labels=batch_l["labels"],
+        pixel_values=batch_l.get("pixel_values"),
     )
     # Reference model forward (frozen, no_grad)
     with torch.no_grad():
         ref_w = ref_model(
             input_ids=batch_w["input_ids"], attention_mask=batch_w["attention_mask"],
-            pixel_values=batch_w.get("pixel_values"), labels=batch_w["labels"],
+            pixel_values=batch_w.get("pixel_values"),
         )
         ref_l = ref_model(
             input_ids=batch_l["input_ids"], attention_mask=batch_l["attention_mask"],
-            pixel_values=batch_l.get("pixel_values"), labels=batch_l["labels"],
+            pixel_values=batch_l.get("pixel_values"),
         )
-    # r(x,y) = CE_ref - CE_θ; margin = r(y_w) - r(y_l)
-    r_w = ref_w.loss - out_w.loss
-    r_l = ref_l.loss - out_l.loss
+    # Normalize the policy-reference log ratio itself by answer length. A raw
+    # sum lets a long rejected answer create a huge margin from tiny per-token
+    # changes, saturating DPO before refusal is likely.
+    logp_w = _sequence_logprob(out_w.logits, batch_w["labels"])
+    logp_l = _sequence_logprob(out_l.logits, batch_l["labels"])
+    with torch.no_grad():
+        ref_logp_w = _sequence_logprob(ref_w.logits, batch_w["labels"])
+        ref_logp_l = _sequence_logprob(ref_l.logits, batch_l["labels"])
+
+    # y_w is the refusal and y_l is the original answer.  Minimizing this loss
+    # therefore increases the policy's relative preference for refusal.
+    win_length = batch_w["labels"][:, 1:].ne(-100).sum(dim=-1).clamp_min(1)
+    lose_length = batch_l["labels"][:, 1:].ne(-100).sum(dim=-1).clamp_min(1)
+    r_w = (logp_w - ref_logp_w) / win_length
+    r_l = (logp_l - ref_logp_l) / lose_length
     margin = r_w - r_l
     dpo_loss = -F.logsigmoid(beta * margin).mean()
-    return dpo_loss, margin.detach()
+    return dpo_loss, margin.detach().mean()
 
 
 def compute_retain_kl(model, ref_model, input_ids, attn_mask, pixel_values, labels):
@@ -135,17 +187,25 @@ def compute_retain_kl(model, ref_model, input_ids, attn_mask, pixel_values, labe
     """
     outputs = model(
         input_ids=input_ids, attention_mask=attn_mask,
-        pixel_values=pixel_values, labels=labels,
+        pixel_values=pixel_values,
     )
     with torch.no_grad():
         ref_outputs = ref_model(
             input_ids=input_ids, attention_mask=attn_mask,
-            pixel_values=pixel_values, labels=labels,
+            pixel_values=pixel_values,
         )
-    prob_theta = F.softmax(outputs.logits, dim=-1)
-    prob_ref = F.softmax(ref_outputs.logits, dim=-1)
-    kl = (prob_ref * (torch.log(prob_ref + 1e-12) - torch.log(prob_theta + 1e-12))).sum(-1).mean()
-    return kl
+
+    # logits[:, t] predicts labels[:, t + 1]. Retain only assistant-answer
+    # positions; prompt and padding labels are -100 in the collator.
+    valid = labels[:, 1:].ne(-100)
+    if not valid.any():
+        # Keep the zero connected to the policy graph so backward remains valid.
+        return outputs.logits.sum() * 0.0
+
+    policy_logp = F.log_softmax(outputs.logits[:, :-1].float(), dim=-1)
+    ref_logp = F.log_softmax(ref_outputs.logits[:, :-1].float(), dim=-1)
+    token_kl = (ref_logp.exp() * (ref_logp - policy_logp)).sum(dim=-1)
+    return token_kl.masked_select(valid).mean()
 
 
 # ═══════════════════════════════════════════════════
@@ -188,8 +248,7 @@ class ForgetDataset(TorchDataset):
             for k in questions.keys():
                 q_text = self._json2token(questions[k])
                 a_plus = self._json2token(answers[k])
-                a_0 = self._json2token(random.choice(self.idk_list))
-                data.append((img, q_text, a_plus, a_0))
+                data.append((img, q_text, a_plus))
         return data
 
     def _json2token(self, obj):
@@ -210,7 +269,8 @@ class ForgetDataset(TorchDataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        img, q, a_plus, a_0 = self.data[idx]
+        img, q, a_plus = self.data[idx]
+        a_0 = self._json2token(random.choice(self.idk_list))
         return {"image": img, "question": q, "answer_plus": a_plus, "answer_0": a_0}
 
 
@@ -218,53 +278,53 @@ class ForgetDataset(TorchDataset):
 # Collate 函数
 # ═══════════════════════════════════════════════════
 
-def _make_labels(batch, processor):
-    """Mask prompt & pad tokens: only keep ASSISTANT: answer tokens for CE."""
-    lbl = batch["input_ids"].clone()
-    lbl[lbl == processor.tokenizer.pad_token_id] = -100
-    # mask all tokens before the last ASSISTANT: occurrence
-    for i in range(lbl.shape[0]):
-        ass_pos = (lbl[i] == processor.tokenizer.encode("ASSISTANT", add_special_tokens=False)[0]).nonzero(as_tuple=True)[0]
-        ass_pos_full = (lbl[i] == processor.tokenizer.encode("ASSISTANT:", add_special_tokens=False)[-1]).nonzero(as_tuple=True)[0]
-        if len(ass_pos_full) > 0:
-            cut = ass_pos_full[-1] + 1  # mask up to and including ":"
-            lbl[i, :cut] = -100
-    return lbl
-
-
 def collate_forget_mm(examples, processor, args):
     """多模态 forget collate: batch_w (idk) + batch_l (正确答案)"""
     images = []
     texts_w, texts_l = [], []
+    answers_w, answers_l = [], []
     for ex in examples:
         images.append(ex['image'])
         q = ex['question']
+        answers_w.append(ex['answer_0'])
+        answers_l.append(ex['answer_plus'])
         texts_w.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_plus']}")
-    bw = processor(text=texts_w, images=images, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
-    bl = processor(text=texts_l, images=images, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
+    bw = processor(text=texts_w, images=images, padding=True, truncation=True,
+                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+    bl = processor(text=texts_l, images=images, padding=True, truncation=True,
+                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
-                     "pixel_values": bw["pixel_values"], "labels": _make_labels(bw, processor)},
+                     "pixel_values": bw["pixel_values"],
+                     "labels": mask_prompt_labels(bw, processor, answers_w)},
         "batch_l": {"input_ids": bl["input_ids"], "attention_mask": bl["attention_mask"],
-                     "pixel_values": bl["pixel_values"], "labels": _make_labels(bl, processor)},
+                     "pixel_values": bl["pixel_values"],
+                     "labels": mask_prompt_labels(bl, processor, answers_l)},
     }
 
 
 def collate_forget_um(examples, processor, args):
     """单模态 forget collate: batch_w (idk) + batch_l (正确答案)，无 image"""
     texts_w, texts_l = [], []
+    answers_w, answers_l = [], []
     for ex in examples:
         q = ex['question']
+        answers_w.append(ex['answer_0'])
+        answers_l.append(ex['answer_plus'])
         texts_w.append(f"USER: {q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: {q}\nASSISTANT: {ex['answer_plus']}")
-    bw = processor(text=texts_w, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
-    bl = processor(text=texts_l, padding=True, truncation=True, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
+    bw = processor(text=texts_w, padding=True, truncation=True,
+                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+    bl = processor(text=texts_l, padding=True, truncation=True,
+                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
-                     "pixel_values": None, "labels": _make_labels(bw, processor)},
+                     "pixel_values": None,
+                     "labels": mask_prompt_labels(bw, processor, answers_w)},
         "batch_l": {"input_ids": bl["input_ids"], "attention_mask": bl["attention_mask"],
-                     "pixel_values": None, "labels": _make_labels(bl, processor)},
+                     "pixel_values": None,
+                     "labels": mask_prompt_labels(bl, processor, answers_l)},
     }
 
 
@@ -298,10 +358,20 @@ def main(args):
     set_global_seed(42)
     # ── 加载模型 ──
     model, ref_model, processor = load_model_and_processor(args)
+    tok_dir = args.processor_dir if args.processor_dir else args.model_id
+    tokenizer = AutoTokenizer.from_pretrained(tok_dir, local_files_only=True)
+    print("Tokenizer Length:", len(tokenizer))
+
+    model.resize_token_embeddings(len(processor.tokenizer))
+    ref_model.resize_token_embeddings(len(processor.tokenizer))
 
     # ── LoRA ──
     lora_config = LoraConfig(
-        r=64, lora_alpha=32, lora_dropout=0.05,
+        r=8,
+        lora_alpha=16,
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
         target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
@@ -332,8 +402,11 @@ def main(args):
     print(f"Forget MM: {len(forget_mm)}, Forget UM: {len(forget_um)}")
 
     # Retain datasets (复用 unlearn_dataset.py)
-    retain_mm = Muitimodal_Dataset(df=df_retain, mode=f"retain_{100 - args.forget_split_ratio}")
-    retain_um = Unimodal_Dataset(df=df_retain, mode=f"retain_{100 - args.forget_split_ratio}")
+    # Keep the complete retain split, then draw a fresh balanced subset on each
+    # epoch through RandomSampler. This matches the benchmark's explicit
+    # sample-limit handling and avoids reusing one fixed subset forever.
+    retain_mm = Muitimodal_Dataset(df=df_retain, mode="retain_full")
+    retain_um = Unimodal_Dataset(df=df_retain, mode="retain_full")
     print(f"Retain MM: {len(retain_mm)}, Retain UM: {len(retain_um)}")
 
     # ── DataLoaders ──
@@ -341,14 +414,23 @@ def main(args):
                        collate_fn=lambda x: collate_forget_mm(x, processor, args))
     dl_um = DataLoader(forget_um, batch_size=args.batch_size, shuffle=True,
                        collate_fn=lambda x: collate_forget_um(x, processor, args))
-    dl_ret_mm = DataLoader(retain_mm, batch_size=args.batch_size, shuffle=True,
+    retain_samples = len(forget_mm)
+    if retain_samples == 0:
+        raise ValueError("Forget dataset is empty; cannot determine retain sample count.")
+    dl_ret_mm = DataLoader(retain_mm, batch_size=args.batch_size,
+                           sampler=RandomSampler(retain_mm, replacement=False,
+                                                 num_samples=retain_samples),
                            collate_fn=lambda x: train_collate_fn_llava_multimodal(x, processor, args))
-    dl_ret_um = DataLoader(retain_um, batch_size=args.batch_size, shuffle=True,
+    dl_ret_um = DataLoader(retain_um, batch_size=args.batch_size,
+                           sampler=RandomSampler(retain_um, replacement=False,
+                                                 num_samples=retain_samples),
                            collate_fn=lambda x: train_collate_fn_llava_unimodal(x, processor, args))
 
     # ── Accelerator ──
-    accelerator = Accelerator()
-    writer = SummaryWriter(log_dir=os.path.join(os.path.dirname(args.save_dir), "tensorboard"))
+    accelerator = Accelerator(
+        kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)]
+    )
+    writer = SummaryWriter(log_dir=args.tensorboard_dir) if accelerator.is_main_process else None
     global_step = 0
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
@@ -361,12 +443,13 @@ def main(args):
         accelerator.prepare(model, ref_model, optimizer, dl_mm, dl_um,
                             dl_ret_mm, dl_ret_um, lr_scheduler)
 
-    # ── EMA 状态 ──
-    M0 = 0.0
+    # Start from the desired VQA lead so the controller begins at gamma0.
+    gap_ema = args.target_gap
 
     # ═══════════════════════════════════════════════════
     # 训练循环
     # ═══════════════════════════════════════════════════
+    stop_training = False
     for epoch in range(args.num_epochs):
         model.train()
         total_loss = 0.0
@@ -382,16 +465,17 @@ def main(args):
             loss_uni, M_uni = compute_forget_dpo_loss(
                 model, ref_model, batch_um["batch_w"], batch_um["batch_l"], beta=args.beta)
 
-            # ── 动态 γ (已修复符号: M = M_uni - M_mul) ──
-            # M > 0 → 单模态遗忘快于多模态 → 应减小 l_uni 权重(给多模态更多学习信号)
-            # M > 0 → M_b > M_0 → γ = 1 - α·(M_b - M_0) < 1 → γ↓ ✅ 正确
-            # 修复: M = M_uni - M_mul (原为 M_mul - M_uni, 符号反了)
-            M_b = M_uni - M_mul
-            # 多卡同步：margin 基于各卡本地 batch 计算，跨卡平均保证每卡 gamma/M0 一致
-            M_b = accelerator.gather(M_b.reshape(1)).mean()
-            M0 = args.rho * M0 + (1.0 - args.rho) * M_b
-            raw_gamma = (1.0 - args.alpha * (M_b - M0)) * args.gamma0
-            gamma = max(0.0, raw_gamma.item())
+            # ── Dynamic gamma from the global, smoothed absolute gap ──
+            # All ranks must use the same controller state and loss weight.
+            # The local DPO gradients are still averaged normally by DDP.
+            M_mul = accelerator.reduce(M_mul, reduction="mean")
+            M_uni = accelerator.reduce(M_uni, reduction="mean")
+            # Positive gap means VQA is ahead. Once its smoothed lead exceeds
+            # target_gap, increase the QA weight by gamma_gain per gap unit.
+            gap = M_mul - M_uni
+            gap_ema = args.rho * gap_ema + (1.0 - args.rho) * gap
+            raw_gamma = args.gamma0 + args.gamma_gain * (gap_ema - args.target_gap)
+            gamma = min(args.gamma_max, max(args.gamma_min, raw_gamma.item()))
 
             # ── Forget backward ──
             loss_forget = loss_mul + gamma * loss_uni
@@ -399,10 +483,10 @@ def main(args):
             step_log["l_mul"] = loss_mul.item()
             step_log["l_uni"] = loss_uni.item()
             step_log["gamma"] = gamma
-            step_log["M0"] = M0.item() if hasattr(M0, 'item') else M0
+            step_log["gap_ema"] = gap_ema.item() if hasattr(gap_ema, 'item') else gap_ema
             step_log["M_uni"] = M_uni.item() if hasattr(M_uni, 'item') else M_uni
             step_log["M_mul"] = M_mul.item() if hasattr(M_mul, 'item') else M_mul
-            step_log["delta"] = M_b.item() if hasattr(M_b, 'item') else M_b
+            step_log["gap"] = gap.item() if hasattr(gap, 'item') else gap
 
             # ── Retain KL (仅 λ>0 时启用) ──
             if args.lmbda > 0:
@@ -427,38 +511,71 @@ def main(args):
             optimizer.zero_grad()
             lr_scheduler.step()
 
-            step_total = sum(v for k, v in step_log.items() if k.startswith("l_"))
+            step_total = loss_forget.item()
+            if args.lmbda > 0:
+                step_total += args.lmbda * (loss_ret_mm.item() + loss_ret_um.item())
             total_loss += step_total
-            writer.add_scalar("Loss/train", step_total, global_step)
-            writer.add_scalar("gamma", gamma, global_step)
-            writer.add_scalar("M/M0_ema", M0.item() if hasattr(M0, 'item') else M0, global_step)
-            writer.add_scalar("M/multimodal_margin", M_mul.item() if hasattr(M_mul, 'item') else M_mul, global_step)
-            writer.add_scalar("M/unimodal_margin", M_uni.item() if hasattr(M_uni, 'item') else M_uni, global_step)
-            writer.add_scalar("M/margin_gap", M_b.item() if hasattr(M_b, 'item') else M_b, global_step)
+            if writer is not None:
+                writer.add_scalar("Loss/train", step_total, global_step)
+                writer.add_scalar("gamma", gamma, global_step)
+                writer.add_scalar("M/gap_ema", gap_ema.item() if hasattr(gap_ema, 'item') else gap_ema, global_step)
+                writer.add_scalar("M/multimodal_margin", M_mul.item() if hasattr(M_mul, 'item') else M_mul, global_step)
+                writer.add_scalar("M/unimodal_margin", M_uni.item() if hasattr(M_uni, 'item') else M_uni, global_step)
+                writer.add_scalar("M/margin_gap", gap.item() if hasattr(gap, 'item') else gap, global_step)
             global_step += 1
             progress.set_postfix({k: (f"{v:.4f}" if isinstance(v, float) else v)
                                    for k, v in step_log.items()})
+            if args.max_steps is not None and global_step >= args.max_steps:
+                stop_training = True
+                break
 
         avg_loss = total_loss / len(dl_mm)
-        writer.add_scalar("Loss/epoch", avg_loss, epoch)
-        print(f"Epoch {epoch+1} - Avg Loss: {avg_loss:.4f}, Final M0: "
-              f"{M0.item() if hasattr(M0, 'item') else M0:.4f}")
+        if writer is not None:
+            writer.add_scalar("Loss/epoch", avg_loss, epoch)
+        print(f"Epoch {epoch+1} - Avg Loss: {avg_loss:.4f}, Final gap EMA: "
+              f"{gap_ema.item() if hasattr(gap_ema, 'item') else gap_ema:.4f}")
 
-    writer.close()
+        # Keep an adapter checkpoint after every epoch for rollback/evaluation.
+        accelerator.wait_for_everyone()
+        if accelerator.is_main_process:
+            epoch_dir = os.path.join(args.epoch_dir, f"epoch-{epoch + 1}")
+            os.makedirs(epoch_dir, exist_ok=True)
+            accelerator.unwrap_model(model).save_pretrained(epoch_dir)
+            print(f"Saved LoRA checkpoint: {epoch_dir}")
+        if stop_training:
+            break
 
-    # ── 保存 LoRA adapter ──
+    if writer is not None:
+        writer.close()
+
+    # ── Point adapters/final at the last per-epoch adapter ──
     accelerator.wait_for_everyone()
-    unwrapped_model = accelerator.unwrap_model(model)
-    unwrapped_model.save_pretrained(args.save_dir)
-
-    # ── 记录 base 模型路径（eval 加载 base + adapter 用）──
-    ema_state = {"M0_final": M0.item() if hasattr(M0, 'item') else float(M0),
-                 "rho": args.rho, "alpha": args.alpha, "gamma0": args.gamma0}
     if accelerator.is_main_process:
-        with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
+        final_epoch_dir = os.path.join(args.epoch_dir, f"epoch-{epoch + 1}")
+        with open(os.path.join(final_epoch_dir, "base_model.json"), "w") as f:
             json.dump({"base_model": args.vanilla_dir, "method": "MAW"}, f)
-        # ── 保存 EMA 状态 ──
-        with open(os.path.join(os.path.dirname(args.save_dir), "ema_state.json"), "w") as f:
+        if os.path.lexists(args.save_dir):
+            if os.path.islink(args.save_dir):
+                os.unlink(args.save_dir)
+            elif os.path.isdir(args.save_dir) and not os.listdir(args.save_dir):
+                os.rmdir(args.save_dir)
+            else:
+                raise FileExistsError(f"Refusing to replace non-empty final adapter: {args.save_dir}")
+        target = os.path.relpath(final_epoch_dir, os.path.dirname(args.save_dir))
+        os.symlink(target, args.save_dir, target_is_directory=True)
+
+    # ── 保存 EMA 状态 ──
+    ema_state = {
+        "gap_ema_final": gap_ema.item() if hasattr(gap_ema, 'item') else float(gap_ema),
+        "rho": args.rho,
+        "target_gap": args.target_gap,
+        "gamma0": args.gamma0,
+        "gamma_gain": args.gamma_gain,
+        "gamma_min": args.gamma_min,
+        "gamma_max": args.gamma_max,
+    }
+    if accelerator.is_main_process:
+        with open(os.path.join(args.config_dir, "controller_state.json"), "w") as f:
             json.dump(ema_state, f, indent=2)
 
     print(f"Model saved to: {args.save_dir}")
@@ -476,48 +593,67 @@ if __name__ == "__main__":
     parser.add_argument("--vanilla_dir", type=str, required=True,
                         help="SFT model path (also used as π_ref)")
     parser.add_argument("--save_dir", type=str, default=None,
-                        help="Output dir (default: auto <run_dir>/model)")
+                        help="Final adapter dir (default: <run_dir>/adapters/final)")
     parser.add_argument("--run_dir", type=str, default=None,
-                        help="Unified run dir (default: results/MAW/<timestamp>)")
+                        help="Unified run dir (default: results/MAW/runs/<timestamp>)")
     parser.add_argument("--data_split_dir", type=str, required=True,
                         help="Root directory of forget/retain data splits")
     parser.add_argument("--forget_split_ratio", type=int, default=5)
-    parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--batch_size", type=int, default=4,
+                        help="Per-GPU batch size; with 4 GPUs global batch size is 16")
+    parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--num_epochs", type=int, default=5)
-    parser.add_argument("--max_length", type=int, default=384)
+    parser.add_argument("--max_steps", type=int, default=None,
+                        help="Optional optimizer-step limit for smoke tests")
+    parser.add_argument("--max_length", type=int, default=1024,
+                        help="Sequence length; must leave room for LLaVA image tokens")
     # DPO
     parser.add_argument("--beta", type=float, default=0.4, help="DPO temperature")
-    # Dynamic γ
-    parser.add_argument("--alpha", type=float, default=0.5,
-                        help="Gamma sensitivity to margin gap (M_b - M0)")
-    parser.add_argument("--gamma0", type=float, default=1.0,
+    # Dynamic gamma
+    parser.add_argument("--gamma0", type=float, default=0.25,
                         help="Base unimodal loss weight")
-    parser.add_argument("--rho", type=float, default=0.95,
-                        help="EMA smoothing coefficient for M0")
+    parser.add_argument("--target_gap", type=float, default=1.0,
+                        help="Allowed EMA margin lead for VQA over QA")
+    parser.add_argument("--gamma_gain", type=float, default=0.15,
+                        help="QA-weight increase per gap unit beyond target_gap")
+    parser.add_argument("--gamma_min", type=float, default=0.2)
+    parser.add_argument("--gamma_max", type=float, default=0.6)
+    parser.add_argument("--rho", type=float, default=0.8,
+                        help="EMA smoothing coefficient for the global margin gap")
     # Retain
     parser.add_argument("--lmbda", type=float, default=0.0,
                         help="Retain KL weight (v1: 0.0, v2: >0.0)")
     args = parser.parse_args()
+    if not 0 <= args.rho < 1:
+        parser.error("--rho must be in [0, 1)")
+    if args.num_epochs < 1:
+        parser.error("--num_epochs must be at least 1")
+    if args.gamma_min > args.gamma_max:
+        parser.error("--gamma_min must not exceed --gamma_max")
 
-    # ── 统一运行目录: results/MAW/<timestamp>/ (与其他 unlearn 方法一致) ──
+    # ── Structured run directory ──
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = args.run_dir or os.path.join("results", "MAW", timestamp)
-    os.makedirs(run_dir, exist_ok=True)
-    save_dir = args.save_dir or os.path.join(run_dir, "model")
-    tb_dir = os.path.join(run_dir, "tensorboard")
-    os.makedirs(tb_dir, exist_ok=True)
+    run_dir = args.run_dir or os.path.join("results", "MAW", "runs", timestamp)
+    config_dir = os.path.join(run_dir, "config")
+    adapter_dir = os.path.join(run_dir, "adapters")
+    save_dir = args.save_dir or os.path.join(adapter_dir, "final")
+    epoch_dir = os.path.join(adapter_dir, "epochs")
+    tb_dir = os.path.join(run_dir, "logs", "tensorboard")
+    for directory in (config_dir, os.path.dirname(save_dir), epoch_dir, tb_dir):
+        os.makedirs(directory, exist_ok=True)
 
-    # ── 保存超参 (args.json)，多卡时仅主进程写 ──
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        with open(os.path.join(run_dir, "args.json"), "w") as f:
-            json.dump(vars(args), f, indent=2, default=str)
+    # ── 保存超参 (args.json) ──
+    with open(os.path.join(config_dir, "args.json"), "w") as f:
+        json.dump(vars(args), f, indent=2, default=str)
     print(f"Run dir: {run_dir}")
     print(f"Model save dir: {save_dir}")
     print(f"TensorBoard log dir: {tb_dir}")
 
     args.run_dir = run_dir
     args.save_dir = save_dir
+    args.epoch_dir = epoch_dir
+    args.config_dir = config_dir
+    args.tensorboard_dir = tb_dir
 
     try:
         main(args)
@@ -525,7 +661,7 @@ if __name__ == "__main__":
         import traceback
         crash = {"timestamp": datetime.now().strftime("%y%m%d_%H%M%S"),
                  "traceback": traceback.format_exc()}
-        with open(os.path.join(run_dir, "crash_report.json"), "w") as f:
+        with open(os.path.join(config_dir, "crash_report.json"), "w") as f:
             json.dump(crash, f, indent=2)
-        print(f"Crash report saved to {os.path.join(run_dir, 'crash_report.json')}")
+        print(f"Crash report saved to {os.path.join(config_dir, 'crash_report.json')}")
         raise

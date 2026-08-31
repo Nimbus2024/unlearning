@@ -64,11 +64,18 @@ class Muitimodal_Dataset(Dataset):
                     "question":questions[k],
                     "answer": answers[k]
                 })  
-        if self.mode.split('_')[0]=='retain':
-            ratio = int(self.mode.split('_')[1])/100
-            n = int(len(flattened_data)*(1-ratio)/ratio)
-            # print(ratio,n)
-            flattened_data = random.sample(flattened_data, n)
+        if self.mode == 'retain_full':
+            return flattened_data
+        if self.mode.split('_')[0] == 'retain':
+            ratio = int(self.mode.split('_')[1]) / 100
+            if not 0 < ratio <= 1:
+                raise ValueError(f"retain ratio must be in (0, 100], got {self.mode!r}")
+            n = min(len(flattened_data), int(len(flattened_data) * (1 - ratio) / ratio))
+            if n == 0:
+                flattened_data = []
+            else:
+                # Use a local RNG so dataset construction does not alter global shuffling.
+                flattened_data = random.Random(42).sample(flattened_data, n)
 
         return flattened_data
     def resize_image(self, image):
@@ -143,21 +150,46 @@ def mask_prompt_labels(batch, processor, answers):
     input_ids = batch["input_ids"]
     pad_id = processor.tokenizer.pad_token_id
     labels = input_ids.clone()
+    # Padding must never contribute to the language-model loss.
+    if "attention_mask" in batch:
+        labels[batch["attention_mask"] == 0] = -100
+    elif pad_id is not None:
+        labels[input_ids == pad_id] = -100
     for i in range(labels.shape[0]):
         row = input_ids[i]
-        nonpad = (row != pad_id).nonzero()
+        if "attention_mask" in batch:
+            nonpad = (batch["attention_mask"][i] != 0).nonzero()
+        elif pad_id is not None:
+            nonpad = (row != pad_id).nonzero()
+        else:
+            nonpad = torch.arange(row.numel(), device=row.device).unsqueeze(-1)
         if len(nonpad) == 0:
             labels[i] = -100
             continue
         end = nonpad[-1].item()
         ans_ids = processor.tokenizer(answers[i], add_special_tokens=False)["input_ids"]
         n = len(ans_ids)
+        if n == 0:
+            labels[i, :end + 1] = -100
+            continue
         start = end - n + 1
-        if not torch.equal(row[start:end + 1], torch.tensor(ans_ids, device=row.device)):
-            raise RuntimeError(f"answer tail alignment failed for sample {i}")
+        if start < 0 or not torch.equal(row[start:end + 1], torch.tensor(ans_ids, device=row.device)):
+            # Truncation can remove part of the answer (or change its first BPE
+            # token due to preceding whitespace). Keep only a matching suffix;
+            # if none remains, ignore this sample rather than training on prompt
+            # tokens or aborting the whole epoch.
+            matched = 0
+            max_len = min(n, end + 1)
+            for length in range(max_len, 0, -1):
+                if torch.equal(row[end - length + 1:end + 1],
+                               torch.tensor(ans_ids[-length:], device=row.device)):
+                    matched = length
+                    break
+            if matched == 0:
+                labels[i, :end + 1] = -100
+                continue
+            start = end - matched + 1
         labels[i, :start] = -100
-    # 由于训练时右padding，将 padding 位置也设为 -100
-    labels[input_ids == pad_id] = -100
     return labels
 
 
