@@ -22,15 +22,17 @@ One row per method/model (latest run). Green = best, red = worst per column; For
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{lccccccccc}
 \toprule
-\multirow{2}{*}{Run} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
+\multirow{2}{*}{Method} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
-Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
+\multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
 \textbf{NPO} & \textcolor{umugreen}{83.0} & \textcolor{umugreen}{77.0} & \textcolor{umugreen}{0.653} & \textcolor{umugreen}{83.7} & \textcolor{umugreen}{72.2} & \textcolor{umugreen}{0.658} & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.6} & \textcolor{umugreen}{0.172} \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
+
+\noindent\small\emph{Each row uses the latest run of the method. For Forget, lower is better ($\downarrow$); for Retain/Real, higher is better ($\uparrow$). Green = best and red = worst per column. Aggregate All = mean of IT/PT (the vLLM backend does not emit the All-modal / Any-modal fields of the original eval.py).}
 
 \newpage
 \section{NPO}
@@ -49,7 +51,7 @@ Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
 \toprule
 \multirow{2}{*}{Run} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
-Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
+\multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
 \textbf{20260831-210334} & \textcolor{umured}{80.0} & \textcolor{umured}{75.0} & \textcolor{umured}{0.639} & \textcolor{umugreen}{83.8} & \textcolor{umugreen}{72.4} & \textcolor{umured}{0.653} & \textcolor{umugreen}{29.4} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.172} \\
 \textbf{20260831-214425} & \textcolor{umugreen}{83.0} & \textcolor{umugreen}{77.0} & \textcolor{umugreen}{0.653} & \textcolor{umured}{83.7} & \textcolor{umured}{72.2} & \textcolor{umugreen}{0.658} & 29.4 & \textcolor{umured}{43.6} & 0.172 \\
@@ -57,6 +59,8 @@ Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
 \end{tabular}
 }
 \end{table}
+
+\noindent\small\emph{Aggregate All = mean of IT/PT. For Forget lower is better ($\downarrow$); Retain/Real higher is better ($\uparrow$). Green = best, red = worst per column.}
 
 \subsection{Per-modal (IT / PT) scores}
 
@@ -67,7 +71,7 @@ Fill & Classif & Gen & Fill & Classif & Gen & Fill & Classif & Gen \\
 \toprule
 \multirow{3}{*}{Run} & \multicolumn{6}{c}{Forget} & \multicolumn{6}{c}{Retain} & \multicolumn{6}{c}{Real} \\
 \cmidrule(lr){2-7} \cmidrule(lr){8-13} \cmidrule(lr){14-19}
-\multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} & \multicolumn{2}{c}{Fill} & \multicolumn{2}{c}{Classif} & \multicolumn{2}{c}{Gen} \\
+\multicolumn{2}{c}{Fill($\downarrow$)} & \multicolumn{2}{c}{Classif($\downarrow$)} & \multicolumn{2}{c}{Gen($\downarrow$)} & \multicolumn{2}{c}{Fill($\uparrow$)} & \multicolumn{2}{c}{Classif($\uparrow$)} & \multicolumn{2}{c}{Gen($\uparrow$)} & \multicolumn{2}{c}{Fill($\uparrow$)} & \multicolumn{2}{c}{Classif($\uparrow$)} & \multicolumn{2}{c}{Gen($\uparrow$)} \\
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
 IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
 \midrule
@@ -77,6 +81,8 @@ IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & 
 \end{tabular}
 }
 \end{table}
+
+\noindent\small\emph{IT = Image-Textual accuracy / ROUGE-L on multimodal questions; PT = Pure-Text accuracy / ROUGE-L on unimodal questions.}
 
 \newpage
 \end{document}

@@ -114,25 +114,27 @@ def build_hparam_table(runs):
     return "\n".join(lines)
 
 
-def build_metric_table(runs, modals):
+def build_metric_table(runs, modals, first_col="Run"):
     n_modals = len(modals)
     ncols = len(DATASETS) * len(TASKS) * n_modals
+    arrow = {"lower_better": "$\\downarrow$", "higher_better": "$\\uparrow$"}
     lines = ["\\begin{table}[H]", "\\centering", "\\resizebox{\\linewidth}{!}{%",
              "\\begin{tabular}{l" + "c" * ncols + "}",
              "\\toprule"]
 
-    row0 = ["\\multirow{3}{*}{Run}"] if n_modals == 2 else ["\\multirow{2}{*}{Run}"]
+    row0 = [f"\\multirow{{{3 if n_modals == 2 else 2}}}{{*}}{{{first_col}}}"]
     row1, row2 = [], []
     cmid_ds, cmid_task = [], []
     col = 2
-    for di, (ds_label, _, _) in enumerate(DATASETS):
+    for di, (ds_label, _, direction) in enumerate(DATASETS):
         start = col
         for ti, (task_label, _, _, _) in enumerate(TASKS):
+            a = arrow[direction]
             if n_modals == 2:
-                row1.append(f"\\multicolumn{{2}}{{c}}{{{task_label}}}")
+                row1.append(f"\\multicolumn{{2}}{{c}}{{{task_label}({a})}}")
                 row2.extend(modals)
             else:
-                row1.append(task_label)
+                row1.append(f"\\multicolumn{{1}}{{c}}{{{task_label}({a})}}")
             cmid_task.append((col, col + n_modals - 1))
             col += n_modals
         row0.append(f"\\multicolumn{{{col - start}}}{{c}}{{{ds_label}}}")
@@ -248,7 +250,13 @@ def main():
     for name, runs in methods.items():
         latest = max(runs, key=lambda r: run_ts(r[0]))
         overview.append((name, latest[1]))
-    doc.append(build_metric_table(overview, ["All"]))
+    doc.append(build_metric_table(overview, ["All"], first_col="Method"))
+    doc.append("")
+    doc.append("\\noindent\\small\\emph{Each row uses the latest run of the method. "
+               "For Forget, lower is better ($\\downarrow$); for Retain/Real, higher "
+               "is better ($\\uparrow$). Green = best and red = worst per column. "
+               "Aggregate All = mean of IT/PT (the vLLM backend does not emit the "
+               "All-modal / Any-modal fields of the original eval.py).}")
     doc.append("")
     doc.append("\\newpage")
 
@@ -265,9 +273,17 @@ def main():
         doc.append("")
         doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["All"]))
         doc.append("")
+        doc.append("\\noindent\\small\\emph{Aggregate All = mean of IT/PT. For Forget "
+                   "lower is better ($\\downarrow$); Retain/Real higher is better "
+                   "($\\uparrow$). Green = best, red = worst per column.}")
+        doc.append("")
         doc.append("\\subsection{Per-modal (IT / PT) scores}")
         doc.append("")
         doc.append(build_metric_table([(l, c) for l, c, _ in runs], ["IT", "PT"]))
+        doc.append("")
+        doc.append("\\noindent\\small\\emph{IT = Image-Textual accuracy / ROUGE-L on "
+                   "multimodal questions; PT = Pure-Text accuracy / ROUGE-L on "
+                   "unimodal questions.}")
         doc.append("")
         doc.append("\\newpage")
 
