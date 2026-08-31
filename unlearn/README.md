@@ -31,7 +31,7 @@ This section provides instructions on running the **GD** baseline. Gradient Diff
 To execute the GD baseline, run the following command:
 
 ```bash
-python GD.py \
+python Graddiff.py \
     --vanilla_dir <path_to_vanilla_model> \
     --save_dir <path_to_save_forget_model> \
     --data_split_dir <path_to_data_split> \

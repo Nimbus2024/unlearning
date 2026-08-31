@@ -243,8 +243,9 @@ def main(args):
     print(f"TensorBoard log dir: {tb_dir}")
     args.save_dir = save_dir
     # Save training hyperparameters for run comparison
-    with open(os.path.join(run_dir, "args.json"), "w") as f:
-        json.dump(vars(args), f, indent=2, default=str)
+    if accelerator.is_main_process:
+        with open(os.path.join(run_dir, "args.json"), "w") as f:
+            json.dump(vars(args), f, indent=2, default=str)
     print(f"Hyperparameters saved to: {run_dir}/args.json")
 
     global_step = 0
@@ -307,8 +308,9 @@ def main(args):
     unwrapped_model = accelerator.unwrap_model(model)
     unwrapped_model.save_pretrained(args.save_dir)
     # Record the base model path so eval can load base + this adapter.
-    with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
-        json.dump({"base_model": args.vanilla_dir, "method": "NPO"}, f)
+    if accelerator.is_main_process:
+        with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
+            json.dump({"base_model": args.vanilla_dir, "method": "NPO"}, f)
     print(f"LoRA adapter saved to: {args.save_dir}")
 
 if __name__ == "__main__":
