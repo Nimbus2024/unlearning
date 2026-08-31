@@ -40,7 +40,19 @@ One row per method/model (latest run). Green = best, red = worst per column; For
 
 \subsection{Hyperparameters}
 
-\emph{No hyperparameters recorded.}
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lora\_r & lora\_alpha \\
+\midrule
+\textbf{20260831-210334} & 5 & 24 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 \\
+\textbf{20260831-214425} & 5 & 8 & 1 & 0.4 & 6.2e-06 & 4 & 8 & 16 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
 
 \subsection{Aggregate (All) scores}
 
