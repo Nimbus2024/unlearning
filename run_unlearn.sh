@@ -22,13 +22,22 @@ METHOD="$1"
 shift
 
 TS=$(date +%Y%m%d-%H%M%S)
-RUN_DIR="results/${METHOD}/${TS}"
-mkdir -p "${RUN_DIR}"
+if [ "${METHOD}" = "MAW" ]; then
+  RUN_DIR="results/MAW/runs/${TS}"
+  TRAIN_LOG="${RUN_DIR}/logs/train.log"
+else
+  RUN_DIR="results/${METHOD}/${TS}"
+  TRAIN_LOG="${RUN_DIR}/train.log"
+fi
+mkdir -p "${RUN_DIR}" "$(dirname "${TRAIN_LOG}")"
+if [ "${METHOD}" = "MAW" ]; then
+  ln -sfn "runs/${TS}" results/MAW/latest
+fi
 
 MODEL_ID=${MODEL_ID:-llava-hf/llava-1.5-7b-hf}
-# 遗忘基座默认是 SFT 模型 (llava_smu_ft)；all unlearn 方法遗忘的是 SFT 后的知识
-VANILLA_DIR=${VANILLA_DIR:-chengyewang/llava_smu_ft}
-DATA_SPLIT_DIR=${DATA_SPLIT_DIR:-/root/autodl-tmp/data/UMU-bench}
+# 遗忘基座和数据默认使用项目内指向 UMU-bench 的软链接；可通过环境变量覆盖。
+VANILLA_DIR=${VANILLA_DIR:-./llava_smu_ft}
+DATA_SPLIT_DIR=${DATA_SPLIT_DIR:-./data}
 FORGET_RATIO=${FORGET_RATIO:-5}
 
 echo "=== [$(date +%H:%M:%S)] Run dir: ${RUN_DIR} ==="
@@ -57,25 +66,71 @@ elif [ "${METHOD}" = "NPO" ]; then
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
 elif [ "${METHOD}" = "MAW" ]; then
-  # MAW (ModalityAdaptiveWeighting): dynamic-gamma DPO unlearn; base/ref = llava_smu_ft (SFT), processor = llava-1.5-7b-hf
-  python unlearn/MAW.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
-    --processor_dir "${PROCESSOR_DIR:-llava-hf/llava-1.5-7b-hf}" \
+  # MAW: four ranks, batch size 2/GPU (global batch size 8).
+  accelerate launch --num_processes 4 unlearn/MAW.py --model_id "${MODEL_ID}" \
+    --vanilla_dir "${VANILLA_DIR}" \
+    --processor_dir "${PROCESSOR_DIR:-./llava_smu_ft}" \
+    --batch_size 2 --lr 5e-5 --lmbda 1 --num_epochs 5 \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
-    2>&1 | tee "${RUN_DIR}/train.log"
+    2>&1 | tee "${TRAIN_LOG}"
 else
   echo "Unknown method: ${METHOD}" >&2
   exit 1
 fi
 
-# --- Eval ---
-echo "=== [$(date +%H:%M:%S)] Eval on ${RUN_DIR}/model ==="
-python eval.py --model_id "${MODEL_ID}" \
-  --cache_path "${RUN_DIR}/model" \
-  --forget_ratio "${FORGET_RATIO}" \
-  --data_split_dir "${DATA_SPLIT_DIR}" \
-  --output_path "${RUN_DIR}" \
-  --output_file "${METHOD}_results.json" \
-  2>&1 | tee "${RUN_DIR}/eval.log"
+# --- Eval (vLLM backend, UMU parquet schema) ---
+if [ "${METHOD}" = "MAW" ]; then
+  mkdir -p "${RUN_DIR}/logs/eval" "${RUN_DIR}/metrics"
+  for checkpoint in "${RUN_DIR}"/adapters/epochs/epoch-*; do
+    [ -d "${checkpoint}" ] || continue
+    epoch=$(basename "${checkpoint}" | sed 's/epoch-//')
+    epoch_dir="${RUN_DIR}/metrics/epoch-${epoch}"
+    eval_log="${RUN_DIR}/logs/eval/epoch-${epoch}.log"
+    echo "=== [$(date +%H:%M:%S)] Eval epoch ${epoch} on ${checkpoint} ===" | tee "${eval_log}"
+    set +e
+    python eval_vllm.py --model_id "${MODEL_ID}" \
+      --cache_path "${checkpoint}" \
+      --processor_path "${PROCESSOR_DIR:-./llava_smu_ft}" \
+      --data_split_folder "${DATA_SPLIT_DIR}" \
+      --task_data "${DATA_SPLIT_DIR}/full_data/train-00000-of-00001.parquet" \
+      --test_data "${DATA_SPLIT_DIR}/full_data/train-00000-of-00001.parquet" \
+      --celebrity_data "${DATA_SPLIT_DIR}/real_person/train-00000-of-00001.parquet" \
+      --output_folder "${epoch_dir}" \
+      --output_file "${METHOD}_epoch-${epoch}" \
+      --forget_ratio "${FORGET_RATIO}" \
+      --batch_size 32 --tensor_parallel_size 1 --max_model_len 4096 \
+      2>&1 | tee -a "${eval_log}"
+    eval_status=${PIPESTATUS[0]}
+    set -e
+    # Python finally handles normal exits; this also covers native vLLM aborts.
+    rm -rf -- "$(dirname "${checkpoint}")/.$(basename "${checkpoint}")_vllm_merged"
+    if [ "${eval_status}" -ne 0 ]; then
+      echo "vLLM evaluation failed for epoch ${epoch} (status ${eval_status})" >&2
+      exit "${eval_status}"
+    fi
+  done
+else
+  echo "=== [$(date +%H:%M:%S)] Eval on ${RUN_DIR}/model ==="
+  set +e
+  python eval_vllm.py --model_id "${MODEL_ID}" \
+    --cache_path "${RUN_DIR}/model" \
+    --processor_path "${PROCESSOR_DIR:-./llava_smu_ft}" \
+    --data_split_folder "${DATA_SPLIT_DIR}" \
+    --task_data "${DATA_SPLIT_DIR}/full_data/train-00000-of-00001.parquet" \
+    --test_data "${DATA_SPLIT_DIR}/full_data/train-00000-of-00001.parquet" \
+    --celebrity_data "${DATA_SPLIT_DIR}/real_person/train-00000-of-00001.parquet" \
+    --output_folder "${RUN_DIR}" \
+    --output_file "${METHOD}_results" \
+    --forget_ratio "${FORGET_RATIO}" \
+    --batch_size 32 --tensor_parallel_size 4 --max_model_len 4096 \
+    2>&1 | tee "${RUN_DIR}/eval.log"
+  eval_status=${PIPESTATUS[0]}
+  set -e
+  rm -rf -- "${RUN_DIR}/.model_vllm_merged"
+  if [ "${eval_status}" -ne 0 ]; then
+    exit "${eval_status}"
+  fi
+fi
 
 echo "=== [$(date +%H:%M:%S)] Done. Results in ${RUN_DIR} ==="
 
