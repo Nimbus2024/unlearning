@@ -26,6 +26,7 @@ import json
 from unlearn_dataset import Muitimodal_Dataset,Unimodal_Dataset,train_collate_fn_llava_multimodal,train_collate_fn_llava_unimodal
 from PIL import Image
 from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs
 from transformers import AutoProcessor
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BitsAndBytesConfig, LlavaForConditionalGeneration
@@ -56,13 +57,18 @@ def load_model_and_processor(args):
     if args.model_id.startswith("llava"):
         # Load LLAVA model and processor
         print("Loading LLAVA model...")
-        model = LlavaForConditionalGeneration.from_pretrained(
-            args.vanilla_dir,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            local_files_only=True,
-        )
+        load_kwargs = dict(torch_dtype=torch.bfloat16, local_files_only=True)
+        # 多进程 DDP (accelerate launch) 时每个 rank 绑定自己的单卡，
+        # 避免 device_map="auto" 把每份副本铺满所有 GPU 与数据并行冲突。
+        if "LOCAL_RANK" in os.environ:
+            load_kwargs["device_map"] = {"": int(os.environ["LOCAL_RANK"])}
+        else:
+            load_kwargs["device_map"] = "auto"
+        model = LlavaForConditionalGeneration.from_pretrained(args.vanilla_dir, **load_kwargs)
         processor = AutoProcessor.from_pretrained(args.model_id)
+        # LLaVA 模型期望 336x336/14 的 patch token 加原始 <image> 占位符共 576 个，
+        # 旧版 processor 配置会少 1 个（575），需显式补上。
+        processor.num_additional_image_tokens = 1
     else:
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
 
@@ -128,12 +134,13 @@ def main(args):
     if args.model_id.startswith("llava"):
         # Load LLAVA model and processor
         print("Loading Oracle LLAVA model...")
+        oracle_kwargs = dict(torch_dtype=torch.bfloat16, local_files_only=True)
+        if "LOCAL_RANK" in os.environ:
+            oracle_kwargs["device_map"] = {"": int(os.environ["LOCAL_RANK"])}
+        else:
+            oracle_kwargs["device_map"] = "auto"
         oracle_model = LlavaForConditionalGeneration.from_pretrained(
-            args.oracle_model_id,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            local_files_only=True,
-        )
+            args.oracle_model_id, **oracle_kwargs)
     else:
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
 
@@ -214,7 +221,9 @@ def main(args):
 
 
     # Accelerator setup
-    accelerator = Accelerator()
+    accelerator = Accelerator(
+        kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)]
+    )
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
