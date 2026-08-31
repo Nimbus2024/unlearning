@@ -357,10 +357,18 @@ class Unimodal_Dataset(Dataset):
                     "question":questions[k],
                     "answer": answers[k]
                 })  
-        if self.mode.split('_')[0]=='retain':
-            ratio = int(self.mode.split('_')[1])/100
-            n = int(len(flattened_data)*(1-ratio)/ratio)
-            flattened_data = random.sample(flattened_data, n)
+        if self.mode == 'retain_full':
+            return flattened_data
+        if self.mode.split('_')[0] == 'retain':
+            ratio = int(self.mode.split('_')[1]) / 100
+            if not 0 < ratio <= 1:
+                raise ValueError(f"retain ratio must be in (0, 100], got {self.mode!r}")
+            n = min(len(flattened_data), int(len(flattened_data) * (1 - ratio) / ratio))
+            if n == 0:
+                flattened_data = []
+            else:
+                # Use a local RNG so dataset construction does not alter global shuffling.
+                flattened_data = random.Random(42).sample(flattened_data, n)
         return flattened_data
 
     def __len__(self):
