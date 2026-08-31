@@ -10,14 +10,20 @@ repo_id + local_files_only 加载时命中缓存，无需传模型路径超参�
 用法:
   export HF_ENDPOINT=https://hf-mirror.com
   export HF_HOME=/root/autodl-tmp/hf
-  python setup_env.py            # 全部下载
+  python setup_env.py            # 全部: 模型 + 数据集 + vLLM
   python setup_env.py --models   # 只下模型
   python setup_env.py --data     # 只下数据集
+  python setup_env.py --vllm     # 只装 vLLM
+  python setup_env.py --vllm-version 0.11.0   # 装指定版本
 
 注意: 不要加 local_files_only——本脚本就是要联网下载进缓存。
 """
 import argparse
 import os
+import re
+import shutil
+import subprocess
+import sys
 
 # 关键: 禁用 xet 加速传输(部分地区访问 cas-server.xethub.hf.co 401),
 # 强制走普通 HTTP 下载。必须在 import huggingface_hub 前设置。
@@ -93,15 +99,59 @@ def download_data():
     print("dataset downloaded.")
 
 
+def detect_gpu():
+    """返回 (GPU 型号, 驱动 CUDA 版本)；无 nvidia-smi 时返回 (None, None)"""
+    if shutil.which("nvidia-smi") is None:
+        return None, None
+    try:
+        name = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip().splitlines()
+        cuda = subprocess.run(
+            ["nvidia-smi"], capture_output=True, text=True, timeout=10,
+        ).stdout
+        m = re.search(r"CUDA Version: (\d+\.\d+)", cuda)
+        return (name[0] if name else None), (m.group(1) if m else None)
+    except Exception:
+        return None, None
+
+
+def install_vllm(version=None):
+    """安装 vLLM (eval_vllm.py 评测后端)，按 GPU/CUDA 情况给出匹配提示。"""
+    gpu_name, cuda_ver = detect_gpu()
+    print(f"GPU: {gpu_name or '(none)'}, driver CUDA: {cuda_ver or '(unknown)'}")
+    if gpu_name is None:
+        print("WARNING: 未检测到 NVIDIA GPU，vLLM 需要 GPU 才能评测；仍继续安装。")
+    elif "5090" in gpu_name and (cuda_ver is None or float(cuda_ver) < 12.8):
+        print("WARNING: RTX 5090 (Blackwell) 需要 torch cu128 + 新版本 vLLM；"
+              "请确认环境的 torch 是 cu128，否则 vLLM 无法在 5090 上运行。")
+    elif cuda_ver is not None and float(cuda_ver) < 12.0:
+        print(f"WARNING: 驱动 CUDA {cuda_ver} 较旧，vLLM 预编译包要求 CUDA 12+。")
+    spec = f"vllm=={version}" if version else "vllm"
+    print(f"=== pip install {spec} ===")
+    ret = os.system(f"{sys.executable} -m pip install {spec}")
+    if ret != 0:
+        raise RuntimeError(f"pip install {spec} failed (exit {ret})")
+    print("=== 验证 vllm import ===")
+    ret = os.system(f"{sys.executable} -c \"import vllm; print('vllm', vllm.__version__)\"")
+    if ret != 0:
+        raise RuntimeError("vllm import 失败")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--models", action="store_true", help="only download models")
     ap.add_argument("--data", action="store_true", help="only download dataset")
+    ap.add_argument("--vllm", action="store_true", help="only install vLLM")
+    ap.add_argument("--vllm-version", default=None,
+                    help="vLLM version to install (default: latest stable)")
     args = ap.parse_args()
 
-    do_models = args.models or not args.data
-    do_data = args.data or not args.models
+    do_models = args.models or not (args.data or args.vllm)
+    do_data = args.data or not (args.models or args.vllm)
+    do_vllm = args.vllm or not (args.models or args.data)
 
     print("HF_HOME=" + os.environ.get("HF_HOME", "(default)"))
     print("HF_ENDPOINT=" + os.environ.get("HF_ENDPOINT", "(default hf.co)"))
@@ -110,6 +160,8 @@ def main():
         download_models()
     if do_data:
         download_data()
+    if do_vllm:
+        install_vllm(args.vllm_version)
 
     print("=== setup_env 完成。缓存位置见 HF_HOME/hub ===")
 
