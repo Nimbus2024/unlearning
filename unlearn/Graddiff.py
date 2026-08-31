@@ -61,19 +61,12 @@ from unlearn_dataset import (
 
 
 def find_all_linear_names(model):
-    cls = torch.nn.Linear
-    lora_module_names = set()
-    multimodal_keywords = ['multi_modal_projector', 'vision_model', 'vision_tower']
+    """只获取 language_model 内部的线性层（完整路径，与 NPO.py 一致）"""
+    target_names = []
     for name, module in model.named_modules():
-        if any(mm_keyword in name for mm_keyword in multimodal_keywords):
-            continue
-        if isinstance(module, cls):
-            names = name.split('.')
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
-
-    if 'lm_head' in lora_module_names: # needed for 16-bit
-        lora_module_names.remove('lm_head')
-    return list(lora_module_names)
+        if 'language_model' in name and isinstance(module, torch.nn.Linear):
+            target_names.append(name)
+    return target_names
 
 
 # Example usage:
@@ -89,7 +82,6 @@ def load_model_and_processor(args):
             args.vanilla_dir,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            low_cpu_mem_usage=True,
             local_files_only=True,
         )
         processor = AutoProcessor.from_pretrained(args.model_id)
@@ -97,7 +89,6 @@ def load_model_and_processor(args):
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
     # Additional processor configuration if necessary
     processor.tokenizer.padding_side = "right"  # Ensure right padding
-    processor.tokenizer.add_tokens(["<image>", "<pad>"], special_tokens=True)
 
     return model, processor
 
@@ -122,32 +113,41 @@ def invoke(batch,model,model_id,mode):
         raise ValueError("Model ID not recognized or not supported. Please provide a valid model ID.")
     return outputs
 
+### 固定随机种子保证可复现
+def set_global_seed(seed=42):
+    """固定所有能想到的随机源，保证严格可复现"""
+    os.environ['PYTHONHASHSEED'] = str(seed)  # 关闭 Python 字典哈希随机化
+    random.seed(seed)
+    # np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # 关键：让 GPU 运算变得确定性
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+## 如果在 DataLoader 中使用多进程加载数据，可以在 worker_init_fn 中设置随机种子，保证每个 worker 的随机性不同
+def worker_init_fn(worker_id):
+    """DataLoader 多进程时调用"""
+    seed = 42 + worker_id  # 保证每个 worker 不同
+    # np.random.seed(seed)
+    random.seed(seed)
+
+
 ######################### Accelerate Version #################################
 def main(args):
     # 固定随机种子保证可复现
-    random.seed(42)
-    torch.manual_seed(42)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(42)
+    set_global_seed(42)
     # Load model and processor
 
     model, processor = load_model_and_processor(args)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
-    print("Tokenizer Length: ", len(tokenizer))
-
-    # Resize token embeddings to match the tokenizer
-    model.resize_token_embeddings(len(processor.tokenizer))
-    if len(tokenizer) > model.get_input_embeddings().weight.shape[0]:
-        print("WARNING: Resizing the embedding matrix to match the tokenizer vocab size.")
-        model.resize_token_embeddings(len(tokenizer))
 
     # LoRA configuration
     lora_config = LoraConfig(
         r=64, #32
         lora_alpha=32, #8
         lora_dropout=0.05,
-        target_modules=["q_proj", "v_proj"],
-        # target_modules=find_all_linear_names(model),
+        target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
 
@@ -245,8 +245,9 @@ def main(args):
     print(f"TensorBoard log dir: {tb_dir}")
     args.save_dir = save_dir
     # Save training hyperparameters for run comparison
-    with open(os.path.join(run_dir, "args.json"), "w") as f:
-        json.dump(vars(args), f, indent=2, default=str)
+    if accelerator.is_main_process:
+        with open(os.path.join(run_dir, "args.json"), "w") as f:
+            json.dump(vars(args), f, indent=2, default=str)
     print(f"Hyperparameters saved to: {run_dir}/args.json")
 
     global_step = 0
@@ -314,8 +315,9 @@ def main(args):
     unwrapped_model = accelerator.unwrap_model(model)
     unwrapped_model.save_pretrained(args.save_dir)
     # Record the base model path so eval can load base + this adapter.
-    with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
-        json.dump({"base_model": args.vanilla_dir, "method": "GD"}, f)
+    if accelerator.is_main_process:
+        with open(os.path.join(args.save_dir, "base_model.json"), "w") as f:
+            json.dump({"base_model": args.vanilla_dir, "method": "GD"}, f)
     print(f"LoRA adapter saved to: {args.save_dir}")
 
 if __name__ == "__main__":
