@@ -74,10 +74,13 @@ def load_run(path):
 
 
 def load_args(path):
-    ap = os.path.join(os.path.dirname(path), "args.json")
-    if os.path.exists(ap):
-        with open(ap) as f:
-            return json.load(f)
+    d = os.path.dirname(path)
+    for _ in range(5):
+        for cand in (os.path.join(d, "args.json"), os.path.join(d, "config", "args.json")):
+            if os.path.exists(cand):
+                with open(cand) as f:
+                    return json.load(f)
+        d = os.path.dirname(d)
     return None
 
 

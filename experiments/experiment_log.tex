@@ -109,7 +109,18 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 
 \subsection{Hyperparameters}
 
-\emph{No hyperparameters recorded.}
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccccccccccccccc}
+\toprule
+Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta & lora\_r & lora\_alpha & gamma0 & target\_gap & gamma\_gain & gamma\_min & gamma\_max & rho & lmbda & epoch\_dir & config\_dir & tensorboard\_dir \\
+\midrule
+\textbf{20260831-231801} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 & results/MAW/runs/20260831-231801/adapters/epochs & results/MAW/runs/20260831-231801/config & results/MAW/runs/20260831-231801/logs/tensorboard \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
 
 \subsection{Aggregate (All) scores}
 
