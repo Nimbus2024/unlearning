@@ -375,6 +375,14 @@ def main(args):
         target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
+    args.lora_r = lora_config.r
+    args.lora_alpha = lora_config.alpha
+    args.lora_dropout = lora_config.lora_dropout
+    args.lora_target_modules = sorted(lora_config.target_modules)
+    # args.json 需在 lora 配置确定后写入且仅主进程写（多卡时序一致）
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        with open(os.path.join(args.config_dir, "args.json"), "w") as f:
+            json.dump(vars(args), f, indent=2, default=str)
     print("Applying LoRA...")
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
@@ -642,9 +650,6 @@ if __name__ == "__main__":
     for directory in (config_dir, os.path.dirname(save_dir), epoch_dir, tb_dir):
         os.makedirs(directory, exist_ok=True)
 
-    # ── 保存超参 (args.json) ──
-    with open(os.path.join(config_dir, "args.json"), "w") as f:
-        json.dump(vars(args), f, indent=2, default=str)
     print(f"Run dir: {run_dir}")
     print(f"Model save dir: {save_dir}")
     print(f"TensorBoard log dir: {tb_dir}")

@@ -152,6 +152,10 @@ def main(args):
         target_modules=find_all_linear_names(model),
         init_lora_weights="gaussian",
     )
+    args.lora_r = lora_config.r
+    args.lora_alpha = lora_config.alpha
+    args.lora_dropout = lora_config.lora_dropout
+    args.lora_target_modules = sorted(lora_config.target_modules)
 
     print("getting peft model")
     # model = prepare_model_for_kbit_training(model)
