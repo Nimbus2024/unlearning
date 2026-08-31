@@ -315,10 +315,8 @@ class Unimodal_Dataset(Dataset):
         flattened_data = []
 
         for idx, row in self.df.iterrows():
-            # QAs = json.loads(row['UM_QA'])
-            python_dict = ast.literal_eval(row['UM_QA'])
-            json_str = json.dumps(python_dict, indent=4)
-            QAs = json.loads(json_str)
+            # 与 Muitimodal_Dataset 保持一致：直接解析，避免不必要的 json 往返
+            QAs = ast.literal_eval(row['UM_QA'])
             questions = QAs['question']
             answers = QAs['answer']
             for k in questions.keys():
