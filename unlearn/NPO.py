@@ -178,6 +178,8 @@ def main(args):
     # model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    # 梯度检查点: 多卡 DDP 下每 rank 一份完整模型, 激活内存省一半以上
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     # model.add_adapter(lora_config)
     # model.enable_adapters()
@@ -235,8 +237,10 @@ def main(args):
         num_training_steps=len(train_dataloader_multimodal) * args.num_epochs,
     )
 
-    oracle_model,model, optimizer, train_dataloader_multimodal,train_dataloader_unimodal, lr_scheduler = accelerator.prepare(
-        oracle_model,model, optimizer, train_dataloader_multimodal,train_dataloader_unimodal, lr_scheduler
+    # oracle_model 仅在 no_grad 下前向, 不参与 DDP 包装(避免两套 reducer buffer 挤压显存);
+    # 它已按 LOCAL_RANK 绑定在本地卡上。
+    model, optimizer, train_dataloader_multimodal,train_dataloader_unimodal, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader_multimodal,train_dataloader_unimodal, lr_scheduler
     )
 
     # Unified run directory: results/NPO/<timestamp>/ containing tensorboard,
