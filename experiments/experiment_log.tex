@@ -27,6 +27,7 @@ One row per method/model (latest run). Green = best, red = worst per column; For
  & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
 \textbf{NPO} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{0.564} & \textcolor{umugreen}{78.2} & \textcolor{umugreen}{70.6} & \textcolor{umugreen}{0.622} & \textcolor{umugreen}{29.9} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.169} \\
+\textbf{MAW} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.016} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.015} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.025} \\
 \bottomrule
 \end{tabular}
 }
@@ -95,6 +96,54 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 \textbf{20260831-214425} & 92.0 & 74.0 & 74.0 & 80.0 & 0.761 & 0.544 & 95.8 & 71.7 & 75.5 & 68.9 & 0.754 & 0.562 & 27.1 & 31.7 & 39.9 & 47.4 & 0.152 & 0.192 \\
 \textbf{20260831-215752} & 0.0 & 0.0 & 0.0 & 0.0 & 0.000 & 0.000 & 0.0 & 0.0 & 0.0 & 0.0 & 0.000 & 0.000 & 0.0 & 0.0 & 0.0 & 0.0 & 0.000 & 0.000 \\
 \textbf{20260831-224431} & 88.0 & 64.0 & 70.0 & 70.0 & 0.687 & 0.440 & 92.8 & 63.5 & 73.8 & 67.4 & 0.739 & 0.506 & 27.1 & 32.7 & 40.5 & 47.1 & 0.151 & 0.187 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\noindent\small\emph{IT = Image-Textual accuracy / ROUGE-L on multimodal questions; PT = Pure-Text accuracy / ROUGE-L on unimodal questions.}
+
+\newpage
+\section{MAW}
+\label{sec:experiment-maw}
+
+\subsection{Hyperparameters}
+
+\emph{No hyperparameters recorded.}
+
+\subsection{Aggregate (All) scores}
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccccccc}
+\toprule
+\multirow{2}{*}{Run} & \multicolumn{3}{c}{Forget} & \multicolumn{3}{c}{Retain} & \multicolumn{3}{c}{Real} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
+\midrule
+\textbf{20260831-231801} & 0.0 & 0.0 & 0.016 & 0.0 & 0.0 & 0.015 & 0.0 & 0.0 & 0.025 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\noindent\small\emph{Aggregate All = mean of IT/PT. For Forget lower is better ($\downarrow$); Retain/Real higher is better ($\uparrow$). Green = best, red = worst per column.}
+
+\subsection{Per-modal (IT / PT) scores}
+
+\begin{table}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccccccccccccccc}
+\toprule
+\multirow{3}{*}{Run} & \multicolumn{6}{c}{Forget} & \multicolumn{6}{c}{Retain} & \multicolumn{6}{c}{Real} \\
+\cmidrule(lr){2-7} \cmidrule(lr){8-13} \cmidrule(lr){14-19}
+ & \multicolumn{2}{c}{Fill($\downarrow$)} & \multicolumn{2}{c}{Classif($\downarrow$)} & \multicolumn{2}{c}{Gen($\downarrow$)} & \multicolumn{2}{c}{Fill($\uparrow$)} & \multicolumn{2}{c}{Classif($\uparrow$)} & \multicolumn{2}{c}{Gen($\uparrow$)} & \multicolumn{2}{c}{Fill($\uparrow$)} & \multicolumn{2}{c}{Classif($\uparrow$)} & \multicolumn{2}{c}{Gen($\uparrow$)} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
+ & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
+\midrule
+\textbf{20260831-231801} & 0.0 & 0.0 & 0.0 & 0.0 & 0.018 & 0.014 & 0.0 & 0.0 & 0.0 & 0.0 & 0.017 & 0.013 & 0.0 & 0.0 & 0.0 & 0.0 & 0.026 & 0.024 \\
 \bottomrule
 \end{tabular}
 }
