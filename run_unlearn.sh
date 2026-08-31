@@ -61,7 +61,8 @@ elif [ "${METHOD}" = "KL" ]; then
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
 elif [ "${METHOD}" = "NPO" ]; then
-  python unlearn/NPO.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
+  # DDP 多卡训练: NPO_NPROC 默认 4 (4 卡), per-GPU batch = --batch_size, global batch = x NPROC
+  accelerate launch --num_processes "${NPO_NPROC:-4}" unlearn/NPO.py --model_id "${MODEL_ID}" --vanilla_dir "${VANILLA_DIR}" \
     --oracle_model_id "${ORACLE_DIR:-chengyewang/llava_smu_ft}" \
     --run_dir "${RUN_DIR}" --data_split_dir "${DATA_SPLIT_DIR}" "$@" \
     2>&1 | tee "${RUN_DIR}/train.log"
