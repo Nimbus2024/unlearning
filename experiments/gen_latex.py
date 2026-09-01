@@ -177,7 +177,11 @@ def build_metric_table(runs, modals, first_col="Run", highlight=True):
                 for tt in range(len(TASKS)):
                     if ci < acc + n_modals:
                         di, ti, mi = dd, tt, ci - acc
+                        break
                     acc += n_modals
+                else:
+                    continue
+                break
             direction = DATASETS[di][2]
             vals = [float(rows[r][ci + 1]) for r in range(len(rows))]
             if direction == "lower_better":

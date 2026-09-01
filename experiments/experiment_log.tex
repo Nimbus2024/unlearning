@@ -26,8 +26,8 @@ One row per method/model (latest run). Green = best, red = worst per column; For
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
  & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
-\textbf{NPO} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{0.564} & \textcolor{umugreen}{78.2} & \textcolor{umugreen}{70.6} & \textcolor{umured}{0.622} & \textcolor{umugreen}{29.9} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.169} \\
-\textbf{MAW} & \textcolor{umured}{39.0} & \textcolor{umured}{55.0} & \textcolor{umured}{0.223} & \textcolor{umured}{77.9} & \textcolor{umured}{63.5} & \textcolor{umugreen}{0.631} & \textcolor{umured}{28.1} & \textcolor{umured}{42.6} & \textcolor{umured}{0.118} \\
+\textbf{NPO} & \textcolor{umured}{76.0} & \textcolor{umured}{70.0} & \textcolor{umured}{0.564} & \textcolor{umured}{78.2} & \textcolor{umugreen}{70.6} & \textcolor{umured}{0.622} & \textcolor{umugreen}{29.9} & \textcolor{umured}{43.8} & \textcolor{umugreen}{0.169} \\
+\textbf{MAW} & \textcolor{umugreen}{46.0} & \textcolor{umugreen}{57.0} & \textcolor{umugreen}{0.244} & \textcolor{umugreen}{78.9} & \textcolor{umured}{64.8} & \textcolor{umugreen}{0.633} & \textcolor{umured}{27.8} & \textcolor{umugreen}{44.0} & \textcolor{umured}{0.121} \\
 \bottomrule
 \end{tabular}
 }
@@ -116,10 +116,10 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 \toprule
 Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta & lora\_r & lora\_alpha & gamma0 & target\_gap & gamma\_gain & gamma\_min & gamma\_max & rho & lmbda \\
 \midrule
-\textbf{20260901-144038} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
-\textbf{20260901-150922} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
-\textbf{20260901-155524} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 0.5 & 1 & 0.15 & 0.25 & 0.75 & 0.8 & 1 \\
-\textbf{20260901-163725} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 0.5 & 0.5 & 0.15 & 0.25 & 0.75 & 0.8 & 1 \\
+\textbf{20260901-144038(e2)} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
+\textbf{20260901-150922(e1)} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
+\textbf{20260901-155524(e4)} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 0.5 & 1 & 0.15 & 0.25 & 0.75 & 0.8 & 1 \\
+\textbf{20260901-163725(e4)} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 0.5 & 0.5 & 0.15 & 0.25 & 0.75 & 0.8 & 1 \\
 \bottomrule
 \end{tabular}
 }
@@ -136,10 +136,10 @@ Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta 
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
  & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
-\textbf{20260901-144038} & 74.0 & 66.0 & 0.495 & 79.9 & 65.9 & 0.647 & 29.2 & 47.9 & 0.120 \\
-\textbf{20260901-150922} & 67.0 & 68.0 & 0.496 & 78.7 & 65.2 & 0.646 & 29.2 & 47.4 & 0.121 \\
-\textbf{20260901-155524} & 41.0 & 55.0 & 0.235 & 77.6 & 63.7 & 0.631 & 27.8 & 42.3 & 0.124 \\
-\textbf{20260901-163725} & 39.0 & 55.0 & 0.223 & 77.9 & 63.5 & 0.631 & 28.1 & 42.6 & 0.118 \\
+\textbf{20260901-144038(e2)} & 69.0 & 63.0 & 0.387 & 82.1 & 68.8 & 0.654 & 28.9 & 45.4 & 0.127 \\
+\textbf{20260901-150922(e1)} & 67.0 & 68.0 & 0.496 & 78.7 & 65.2 & 0.646 & 29.2 & 47.4 & 0.121 \\
+\textbf{20260901-155524(e4)} & 48.0 & 56.0 & 0.250 & 79.1 & 64.6 & 0.632 & 27.6 & 43.6 & 0.126 \\
+\textbf{20260901-163725(e4)} & 46.0 & 57.0 & 0.244 & 78.9 & 64.8 & 0.633 & 27.8 & 44.0 & 0.121 \\
 \bottomrule
 \end{tabular}
 }
@@ -160,10 +160,10 @@ Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta 
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
  & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
 \midrule
-\textbf{20260901-144038} & 76.0 & 72.0 & 66.0 & 66.0 & 0.505 & 0.485 & 89.6 & 70.3 & 66.6 & 65.2 & 0.738 & 0.556 & 28.4 & 30.1 & 45.8 & 50.0 & 0.063 & 0.178 \\
-\textbf{20260901-150922} & 72.0 & 62.0 & 68.0 & 68.0 & 0.513 & 0.479 & 87.3 & 70.1 & 65.9 & 64.4 & 0.736 & 0.555 & 28.1 & 30.4 & 44.4 & 50.3 & 0.063 & 0.178 \\
-\textbf{20260901-155524} & 22.0 & 60.0 & 48.0 & 62.0 & 0.064 & 0.405 & 82.6 & 72.5 & 62.7 & 64.7 & 0.703 & 0.560 & 26.1 & 29.4 & 37.9 & 46.7 & 0.064 & 0.184 \\
-\textbf{20260901-163725} & 24.0 & 54.0 & 48.0 & 62.0 & 0.063 & 0.384 & 83.4 & 72.5 & 62.4 & 64.5 & 0.706 & 0.556 & 26.8 & 29.4 & 38.6 & 46.7 & 0.056 & 0.181 \\
+\textbf{20260901-144038(e2)} & 76.0 & 62.0 & 64.0 & 62.0 & 0.341 & 0.432 & 92.3 & 71.8 & 70.0 & 67.7 & 0.736 & 0.571 & 28.1 & 29.7 & 41.8 & 49.0 & 0.069 & 0.184 \\
+\textbf{20260901-150922(e1)} & 72.0 & 62.0 & 68.0 & 68.0 & 0.513 & 0.479 & 87.3 & 70.1 & 65.9 & 64.4 & 0.736 & 0.555 & 28.1 & 30.4 & 44.4 & 50.3 & 0.063 & 0.178 \\
+\textbf{20260901-155524(e4)} & 34.0 & 62.0 & 52.0 & 60.0 & 0.081 & 0.418 & 85.6 & 72.6 & 64.3 & 64.8 & 0.703 & 0.561 & 25.5 & 29.7 & 39.5 & 47.7 & 0.065 & 0.187 \\
+\textbf{20260901-163725(e4)} & 34.0 & 58.0 & 52.0 & 62.0 & 0.084 & 0.404 & 85.2 & 72.6 & 64.8 & 64.8 & 0.710 & 0.556 & 25.8 & 29.7 & 39.9 & 48.0 & 0.059 & 0.183 \\
 \bottomrule
 \end{tabular}
 }
