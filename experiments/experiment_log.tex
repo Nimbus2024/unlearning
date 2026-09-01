@@ -26,8 +26,8 @@ One row per method/model (latest run). Green = best, red = worst per column; For
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
  & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
-\textbf{NPO} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{0.564} & \textcolor{umugreen}{78.2} & \textcolor{umugreen}{70.6} & \textcolor{umugreen}{0.622} & \textcolor{umugreen}{29.9} & \textcolor{umugreen}{43.8} & \textcolor{umugreen}{0.169} \\
-\textbf{MAW} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.016} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.015} & \textcolor{umured}{0.0} & \textcolor{umured}{0.0} & \textcolor{umured}{0.025} \\
+\textbf{NPO} & \textcolor{umugreen}{76.0} & \textcolor{umugreen}{70.0} & \textcolor{umugreen}{0.564} & \textcolor{umured}{78.2} & \textcolor{umugreen}{70.6} & \textcolor{umured}{0.622} & \textcolor{umugreen}{29.9} & \textcolor{umured}{43.8} & \textcolor{umugreen}{0.169} \\
+\textbf{MAW} & \textcolor{umured}{67.0} & \textcolor{umured}{68.0} & \textcolor{umured}{0.496} & \textcolor{umugreen}{78.7} & \textcolor{umured}{65.2} & \textcolor{umugreen}{0.646} & \textcolor{umured}{29.2} & \textcolor{umugreen}{47.4} & \textcolor{umured}{0.121} \\
 \bottomrule
 \end{tabular}
 }
@@ -116,7 +116,8 @@ Run & forget\_split\_ratio & batch\_size & alpha & beta & lr & num\_epochs & lor
 \toprule
 Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta & lora\_r & lora\_alpha & gamma0 & target\_gap & gamma\_gain & gamma\_min & gamma\_max & rho & lmbda \\
 \midrule
-\textbf{20260831-231801} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
+\textbf{20260901-144038} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
+\textbf{20260901-150922} & 5 & 2 & 5e-05 & 5 & -- & 0.4 & 8 & 16 & 1 & 1 & 0.15 & 0.5 & 1.5 & 0.8 & 1 \\
 \bottomrule
 \end{tabular}
 }
@@ -133,7 +134,8 @@ Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta 
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
  & \multicolumn{1}{c}{Fill($\downarrow$)} & \multicolumn{1}{c}{Classif($\downarrow$)} & \multicolumn{1}{c}{Gen($\downarrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} & \multicolumn{1}{c}{Fill($\uparrow$)} & \multicolumn{1}{c}{Classif($\uparrow$)} & \multicolumn{1}{c}{Gen($\uparrow$)} \\
 \midrule
-\textbf{20260831-231801} & 0.0 & 0.0 & 0.016 & 0.0 & 0.0 & 0.015 & 0.0 & 0.0 & 0.025 \\
+\textbf{20260901-144038} & 74.0 & 66.0 & 0.495 & 79.9 & 65.9 & 0.647 & 29.2 & 47.9 & 0.120 \\
+\textbf{20260901-150922} & 67.0 & 68.0 & 0.496 & 78.7 & 65.2 & 0.646 & 29.2 & 47.4 & 0.121 \\
 \bottomrule
 \end{tabular}
 }
@@ -154,13 +156,16 @@ Run & forget\_split\_ratio & batch\_size & lr & num\_epochs & max\_steps & beta 
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-11} \cmidrule(lr){12-13} \cmidrule(lr){14-15} \cmidrule(lr){16-17} \cmidrule(lr){18-19}
  & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT & IT & PT \\
 \midrule
-\textbf{20260831-231801} & 0.0 & 0.0 & 0.0 & 0.0 & 0.018 & 0.014 & 0.0 & 0.0 & 0.0 & 0.0 & 0.017 & 0.013 & 0.0 & 0.0 & 0.0 & 0.0 & 0.026 & 0.024 \\
+\textbf{20260901-144038} & 76.0 & 72.0 & 66.0 & 66.0 & 0.505 & 0.485 & 89.6 & 70.3 & 66.6 & 65.2 & 0.738 & 0.556 & 28.4 & 30.1 & 45.8 & 50.0 & 0.063 & 0.178 \\
+\textbf{20260901-150922} & 72.0 & 62.0 & 68.0 & 68.0 & 0.513 & 0.479 & 87.3 & 70.1 & 65.9 & 64.4 & 0.736 & 0.555 & 28.1 & 30.4 & 44.4 & 50.3 & 0.063 & 0.178 \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
 \noindent\small\emph{IT = Image-Textual accuracy / ROUGE-L on multimodal questions; PT = Pure-Text accuracy / ROUGE-L on unimodal questions.}
+
+\noindent\small\emph{Root cause fixed: forget and retain collaters must use the same add_special_tokens setting (symmetric BOS). An asymmetric retain collate (add_special_tokens=False added to shared collate only) collapsed training into a refusal loop (M_uni up to 37, DPO loss saturated); two symmetric settings (both True / both False) both train normally (M_uni 3-5).}
 
 \newpage
 \end{document}

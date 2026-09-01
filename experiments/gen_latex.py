@@ -40,6 +40,15 @@ SKIP_HPARAMS = {
 
 TS_RE = re.compile(r"(20\d{6}-\d{6})")
 
+METHOD_NOTES = {
+    "MAW": ("Root cause fixed: forget and retain collaters must use the same "
+            "add_special_tokens setting (symmetric BOS). An asymmetric retain "
+            "collate (add_special_tokens=False added to shared collate only) "
+            "collapsed training into a refusal loop (M_uni up to 37, DPO loss "
+            "saturated); two symmetric settings (both True / both False) both "
+            "train normally (M_uni 3-5)."),
+}
+
 
 def esc(s):
     return (str(s).replace("%", "\\%").replace("_", "\\_")
@@ -297,6 +306,9 @@ def main():
                    "multimodal questions; PT = Pure-Text accuracy / ROUGE-L on "
                    "unimodal questions.}")
         doc.append("")
+        if name in METHOD_NOTES:
+            doc.append(f"\\noindent\\small\\emph{{{METHOD_NOTES[name]}}}")
+            doc.append("")
         doc.append("\\newpage")
 
     doc.append("\\end{document}")
