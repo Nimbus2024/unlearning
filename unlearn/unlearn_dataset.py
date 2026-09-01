@@ -217,7 +217,7 @@ def train_collate_fn_llava_multimodal(examples, processor, args):
         images=images,
         padding=True,
         truncation=True,
-        # add_special_tokens=False,   # 与 unlearning1 一致(保留默认, 单变量验证中)
+        add_special_tokens=False,   # 对称实验(方案B): retain 侧无 BOS
         # max_length=args.max_length,
         return_tensors="pt"
     )
@@ -441,7 +441,7 @@ def train_collate_fn_llava_unimodal(examples, processor, args):
         padding=True,
         truncation=True,
         # max_length=args.max_length,
-        # add_special_tokens=False,   # 与 unlearning1 一致(保留默认, 单变量验证中)
+        add_special_tokens=False,   # 对称实验(方案B): retain 侧无 BOS
         return_tensors="pt"
     )
     # Mask labels: only keep the assistant's answer tokens (ASSISTANT: onwards)

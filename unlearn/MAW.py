@@ -291,9 +291,9 @@ def collate_forget_mm(examples, processor, args):
         texts_w.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: <image>\n{q}\nASSISTANT: {ex['answer_plus']}")
     bw = processor(text=texts_w, images=images, padding=True, truncation=True,
-                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+                   max_length=args.max_length, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     bl = processor(text=texts_l, images=images, padding=True, truncation=True,
-                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+                   max_length=args.max_length, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
                      "pixel_values": bw["pixel_values"],
@@ -315,9 +315,9 @@ def collate_forget_um(examples, processor, args):
         texts_w.append(f"USER: {q}\nASSISTANT: {ex['answer_0']}")
         texts_l.append(f"USER: {q}\nASSISTANT: {ex['answer_plus']}")
     bw = processor(text=texts_w, padding=True, truncation=True,
-                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+                   max_length=args.max_length, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     bl = processor(text=texts_l, padding=True, truncation=True,
-                   max_length=args.max_length, return_tensors="pt", size={"shortest_edge": 336})
+                   max_length=args.max_length, add_special_tokens=False, return_tensors="pt", size={"shortest_edge": 336})
     return {
         "batch_w": {"input_ids": bw["input_ids"], "attention_mask": bw["attention_mask"],
                      "pixel_values": None,
